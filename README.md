@@ -95,12 +95,14 @@ process environment variables take precedence. Local runs use `data.json` beside
 | `npm run dev` | Start with native Node.js watch mode |
 | `npm run lint` | Run ESLint |
 | `npm run lint:fix` | Apply ESLint fixes |
-| `npm test` | Run isolated regression tests with Node's native test runner |
+| `npm test` | Run isolated regression tests without a browser (also used by CI) |
+| `npm run test:browser` | Manually run local Firefox regression checks |
 | `./run_dev.sh` | Build and start the OrbStack development container |
 
-Browser regression tests use an installed Firefox (or the executable specified by
-`FIREFOX_BIN`) with an isolated profile and synthetic local APIs. They are skipped
-when Firefox is unavailable; the remaining tests still run.
+Browser regression checks run only through `npm run test:browser`, not through
+`npm test` or GitHub Actions. They use an installed Firefox (or the executable
+specified by `FIREFOX_BIN`) with an isolated profile and synthetic local APIs,
+and are skipped when Firefox is unavailable.
 
 ## Server configuration
 

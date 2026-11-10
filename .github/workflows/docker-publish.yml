@@ -32,7 +32,8 @@ jobs:
 
       - run: npm ci
       - run: npm run lint
-      - run: npm test
+      - name: Run regression tests without a browser
+        run: npm test
 
   build-and-push:
     needs: validate

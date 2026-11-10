@@ -16,6 +16,7 @@ const firefox = [process.env.FIREFOX_BIN, '/Applications/Firefox.app/Contents/Ma
   .find(file => file && fs.existsSync(file));
 const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 
+// Run explicitly with npm run test:browser; this is outside automatic test discovery.
 // A real browser checks native validation, disabled fieldsets and focus. Every API is local and synthetic.
 test('frontend persistence and validation regressions in Firefox', {
   skip: firefox ? false : 'Set FIREFOX_BIN to an installed Firefox executable to run browser regressions.',
