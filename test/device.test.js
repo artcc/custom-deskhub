@@ -93,6 +93,7 @@ test('recognizer accepts the synthetic contract with quoting and ignores scripts
   verifyForm(html.replaceAll('\'', '"'));
   verifyForm(html.replace('</form>', '<input name=\'wifiPassword\' type=\'password\'></form>'));
   verifyForm(html.replace('<section', '<!-- <input name=\'unknown\'> --><section'));
+  verifyForm(`<template><template></template></template>${html}`);
 });
 
 test('recognizer fails closed on changed controls, options, form targets and disabled/duplicate fields', () => {
@@ -167,6 +168,9 @@ test('preflight rejects redirects, size overflow, timeout, aborted responses and
   for (const [reply, code, status] of [
     [{ status: 302, headers: { location: '/submit' } }, 'device_incompatible', 502],
     [{ body: html.replace('name=\'apiUrl\'', 'name=\'password\'') }, 'device_incompatible', 502],
+    [{ body: `<template>${html}</template>` }, 'device_incompatible', 502],
+    [{ body: `<template><template></template>${html}</template>` }, 'device_incompatible', 502],
+    [{ body: `<template><textarea></template></textarea>${html}</template>` }, 'device_incompatible', 502],
     [{ body: 'x'.repeat(256 * 1024 + 1) }, 'device_unreachable', 502],
     [{ headers: { 'content-length': 256 * 1024 + 1 } }, 'device_unreachable', 502],
     [{ hang: true }, 'device_unreachable', 504], [{ error: true }, 'device_unreachable', 502],

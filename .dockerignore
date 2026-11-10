@@ -1,48 +1,24 @@
-# Ignore node modules
-node_modules/
+# Allow only build and runtime files, excluding custom storage directories.
+**
+!Dockerfile
+!package.json
+!package-lock.json
+!index.js
+!lib/
+!lib/**
+!public/
+!public/**
+!locale/
+!locale/**
 
-# Ignore npm debug logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Ignore environment files
-.env*
-
-# Ignore data files
-data.json
-data/
-data-dev/
-credentials.json
-credentials.key
-credentials.json.*.tmp
-data.json.*.tmp
-device.json
-device.json.*.tmp
-test/
-scripts/
-run_dev.sh
-docker-compose*.yml
-
-# Ignore git
-.git
-.gitignore
-
-# Ignore IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Ignore OS files
-.DS_Store
-Thumbs.db
-
-# Ignore documentation
-README.md
-LICENSE
-docs/
-
-# Ignore CI/CD
-.github/
+# Keep runtime secrets and data out even beneath an allowed directory.
+**/.env*
+**/data.json
+**/data/
+**/data-dev/
+**/credentials.json
+**/credentials.key
+**/credentials.json.*.tmp
+**/data.json.*.tmp
+**/device.json
+**/device.json.*.tmp

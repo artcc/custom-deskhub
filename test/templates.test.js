@@ -4,6 +4,7 @@ const { PassThrough, Writable } = require('node:stream');
 const { test } = require('node:test');
 const { createContentService } = require('../lib/content');
 const { validateSettings } = require('../lib/settings');
+const { renderDisplay } = require('../lib/rotation');
 
 function settings() {
   return {
@@ -13,7 +14,7 @@ function settings() {
   };
 }
 
-function mockProvider(t, data) {
+function mockProvider(t, data, chunks = [Buffer.from(JSON.stringify(data))]) {
   const calls = [];
   t.mock.method(https, 'request', (options, callback) => {
     calls.push(options.hostname);
@@ -22,7 +23,8 @@ function mockProvider(t, data) {
       const response = new PassThrough();
       response.statusCode = 200;
       callback(response);
-      response.end(JSON.stringify(data));
+      for (const chunk of chunks) response.write(chunk);
+      response.end();
     });
     return request;
   });
@@ -149,6 +151,37 @@ test('plain text keeps literal tokens and wording without calling providers', as
   const service = createContentService({});
   const text = 'Today: {{content}} commits; {{city}}';
   assert.equal(await service.render({ mode: 'text', text }), text);
+});
+
+test('malformed provider bodies return provider errors and allow rotation fallback without caching failures', async t => {
+  for (const [mode, payload] of [
+    ['commits', null], ['weather', null],
+    ['commits', { data: { user: { contributionsCollection: {
+      totalCommitContributions: 1, commitContributionsByRepository: [null]
+    } } } }]
+  ]) {
+    await t.test(`${mode}: ${JSON.stringify(payload)}`, async t => {
+      const calls = mockProvider(t, payload);
+      const service = createContentService({ githubToken: 'test-only-github-key', weatherKey: 'test-only-weather-key' });
+      const input = validateSettings({ ...settings(), mode, text: 'Available text',
+        rotation: { enabled: true, sources: ['text', mode] } });
+      await assert.rejects(service.render(input), { status: 502 });
+      assert.deepEqual(await renderDisplay(input, service, { now: () => 60000 }), {
+        content: 'Available text', mode: 'text', skippedSources: [mode]
+      });
+      assert.equal(calls.length, 2);
+    });
+  }
+});
+
+test('provider UTF-8 text survives a network split inside an accented character', async t => {
+  const body = Buffer.from(JSON.stringify({ cod: 200, name: 'Málaga', main: { temp: 21 },
+    weather: [{ description: 'lluvia débil' }] }));
+  const split = body.indexOf(Buffer.from('á')) + 1;
+  mockProvider(t, null, [body.subarray(0, split), body.subarray(split)]);
+  const service = createContentService({ weatherKey: 'test-only-weather-key' });
+  assert.equal(await service.weather({ city: 'Malaga', units: 'metric', template: '{{city}}: {{condition}}' }),
+    'Malaga: lluvia debil');
 });
 
 test('provider strings are interpolated once and never interpreted as template code', async t => {

@@ -89,12 +89,16 @@ function localizeValidation(input) {
   input.setCustomValidity('');
   if (input === elements.githubToken || input === elements.weatherKey) {
     if (input.value.length > 8192 || /\s/.test(input.value)) input.setCustomValidity(t('invalidKey'));
-  } else if (input.validity.valueMissing) {
+  } else if (input.validity.valueMissing || (input.required && [elements.username, elements.city].includes(input) && !input.value.trim())) {
     input.setCustomValidity(t('requiredField'));
   } else if (input === elements.username && input.validity.patternMismatch) {
     input.setCustomValidity(t('invalidUsername'));
   } else if ([elements.githubTemplate, elements.weatherTemplate].includes(input) && hasInvalidTemplate(input)) {
     input.setCustomValidity(t('invalidTemplateVariable'));
+  } else if (input === elements.city && [...input.value].some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)) {
+    input.setCustomValidity(t('invalidField'));
+  } else if (input === elements.units && !['metric', 'imperial'].includes(input.value)) {
+    input.setCustomValidity(t('invalidField'));
   } else if (input.maxLength >= 0 && input.value.length > input.maxLength) {
     input.setCustomValidity(t('tooLong', { limit: input.maxLength }));
   } else if (!input.validity.valid) {
@@ -109,6 +113,8 @@ for (const form of [elements.form, elements.credentialsForm]) {
 }
 
 let savedSettings = null;
+let settingsKnown = false;
+let settingsLoading = false;
 let legacyShowRepositories = true;
 let capabilities = { github: false, weather: false };
 let csrfToken = '';
@@ -172,7 +178,9 @@ function canSaveSelection() {
 }
 
 function validateSources(sources) {
-  for (const mode of sources) {
+  elements.username.required = sources.includes('commits');
+  elements.city.required = sources.includes('weather');
+  for (const mode of sourceModes) {
     const fieldset = document.getElementById(`fields-${mode}`);
     fieldset.disabled = false;
     const inputs = [...fieldset.querySelectorAll('input, textarea, select')];
@@ -214,12 +222,16 @@ function applyCapabilities(value) {
 }
 
 function isDirty() {
-  return savedSettings !== null && JSON.stringify(readSettings()) !== JSON.stringify(savedSettings);
+  return savedSettings !== null && (!settingsKnown || JSON.stringify(readSettings()) !== JSON.stringify(savedSettings));
 }
 
 function updateControls() {
   const settings = readSettings();
   const { mode, rotation } = settings;
+  elements.username.required = selectedSources(settings).includes('commits');
+  elements.city.required = selectedSources(settings).includes('weather');
+  elements.fields.disabled = !savedSettings || saving || settingsLoading;
+  elements.retry.disabled = saving || settingsLoading;
   elements.rotationOptions.hidden = !rotation.enabled;
   document.getElementById('source-picker-title').textContent = t(rotation.enabled ? 'rotationEditSource' : 'contentSource');
   const missingSources = selectedSources(settings).filter(source => !isAvailable(source));
@@ -234,9 +246,9 @@ function updateControls() {
   const dirty = isDirty();
   const keysPending = Boolean(elements.githubToken.value || elements.weatherKey.value);
   const keyCount = Number(capabilities.github) + Number(capabilities.weather);
-  elements.save.disabled = !savedSettings || saving || credentialsSaving || !dirty || !canSaveSelection();
-  elements.preview.disabled = !savedSettings || saving || credentialsSaving || previewController !== null || !isAvailable(mode);
-  const displayState = t(saving ? 'saving' : !savedSettings ? 'disconnected' : dirty ? 'unsaved' : 'allSaved');
+  elements.save.disabled = !savedSettings || saving || settingsLoading || credentialsSaving || !dirty || !canSaveSelection();
+  elements.preview.disabled = !savedSettings || saving || settingsLoading || credentialsSaving || previewController !== null || !isAvailable(mode);
+  const displayState = t(saving ? 'saving' : !savedSettings ? 'disconnected' : !settingsKnown ? 'unconfirmed' : dirty ? 'unsaved' : 'allSaved');
   const integrationState = credentialsSaving ? t('saving') : keysPending ? t('keysPending')
     : !capabilitiesKnown ? t('unconfirmed') : t('keysSummary', { count: keyCount, total: 2 });
   const state = activeTab === 'device' ? (devicePanel?.state() || t('loadingSettings')) : activeTab === 'display' ? displayState : integrationState;
@@ -246,8 +258,6 @@ function updateControls() {
   document.getElementById('integrations-tab-pending').hidden = !keysPending;
   document.getElementById('integration-count').textContent = capabilitiesKnown ? `${keyCount}/2` : '—';
   document.getElementById('text-count').textContent = t('characterCount', { count: elements.text.value.length, limit: 2048 });
-  document.getElementById('mode-commits').disabled = !isAvailable('commits');
-  document.getElementById('mode-weather').disabled = !isAvailable('weather');
   document.getElementById('github-availability').hidden = !capabilitiesKnown || capabilities.github;
   document.getElementById('weather-availability').hidden = !capabilitiesKnown || capabilities.weather;
   for (const provider of ['github', 'weather']) {
@@ -256,13 +266,13 @@ function updateControls() {
     status.classList.toggle('configured', capabilitiesKnown && capabilities[provider]);
     document.getElementById(`integration-${provider}`).classList.toggle('has-key', capabilitiesKnown && capabilities[provider]);
   }
-  const credentialsDisabled = !savedSettings || saving || credentialsSaving || !capabilitiesKnown;
+  const credentialsDisabled = !savedSettings || saving || settingsLoading || credentialsSaving || !capabilitiesKnown;
   elements.credentialsFields.disabled = credentialsDisabled;
   elements.saveCredentials.disabled = credentialsDisabled || !(elements.githubToken.value || elements.weatherKey.value);
   elements.removeGithub.disabled = credentialsDisabled || !capabilities.github;
   elements.removeWeather.disabled = credentialsDisabled || !capabilities.weather;
   elements.refreshIntegrations.hidden = capabilitiesKnown || !savedSettings;
-  elements.refreshIntegrations.disabled = saving || credentialsSaving;
+  elements.refreshIntegrations.disabled = saving || settingsLoading || credentialsSaving;
 }
 
 function selectTab(name, { focus = false, history = true } = {}) {
@@ -342,9 +352,12 @@ function invalidatePreview(message = t('previewChanged')) {
 }
 
 async function loadSettings() {
+  if (settingsLoading) return false;
+  settingsLoading = true;
   elements.retry.hidden = true;
   elements.form.setAttribute('aria-busy', 'true');
   setMessage(elements.loadStatus, t('loadingSettings'));
+  updateControls();
   try {
     const data = await request('/api/settings');
     if (!data.settings || !data.capabilities || typeof data.csrfToken !== 'string') {
@@ -353,25 +366,30 @@ async function loadSettings() {
     applyCapabilities(data.capabilities);
     csrfToken = data.csrfToken;
     updateRotationInterval(data.rotationIntervalMs);
+    const draft = savedSettings ? readSettings() : null;
     writeSettings(data.settings);
     savedSettings = readSettings();
-    void devicePanel.load();
-    elements.fields.disabled = false;
+    settingsKnown = true;
+    if (draft) writeSettings(draft);
+    else void devicePanel.load();
     setMessage(elements.loadStatus, '');
     if (!selectedSources(savedSettings).every(isAvailable)) {
       setMessage(elements.editorStatus, t('savedSourceUnavailable'), true);
     }
+    return true;
   } catch (error) {
     setMessage(elements.loadStatus, errorMessage(error), true);
     elements.retry.hidden = false;
+    return false;
   } finally {
-    elements.form.setAttribute('aria-busy', 'false');
+    settingsLoading = false;
+    elements.form.setAttribute('aria-busy', String(saving));
     updateControls();
   }
 }
 
 async function generatePreview() {
-  if (!savedSettings || saving || credentialsSaving || !isAvailable(readSettings().mode) || !validateSources([readSettings().mode])) return;
+  if (!savedSettings || saving || settingsLoading || credentialsSaving || !isAvailable(readSettings().mode) || !validateSources([readSettings().mode])) return;
   const currentRevision = revision;
   const controller = new AbortController();
   previewController = controller;
@@ -456,7 +474,7 @@ elements.form.addEventListener('input', event => {
 
 elements.form.addEventListener('submit', async (event) => {
   event.preventDefault();
-  if (!savedSettings || saving || credentialsSaving || !isDirty() || !canSaveSelection() || !validateSources(selectedSources())) return;
+  if (!savedSettings || saving || settingsLoading || credentialsSaving || !isDirty() || !canSaveSelection() || !validateSources(selectedSources())) return;
   const settings = readSettings();
   saving = true;
   elements.fields.disabled = true;
@@ -469,11 +487,16 @@ elements.form.addEventListener('submit', async (event) => {
     if (!data.settings) throw new PanelError(t('saveUnconfirmed'));
     writeSettings(data.settings);
     savedSettings = readSettings();
+    settingsKnown = true;
+    elements.retry.hidden = true;
+    setMessage(elements.loadStatus, '');
     if (JSON.stringify(settings) !== JSON.stringify(savedSettings)) invalidatePreview();
     setMessage(elements.editorStatus, t('settingsSaved'));
     void refreshDisplay();
   } catch (error) {
-    setMessage(elements.editorStatus, t('settingsKept', { error: errorMessage(error) }), true);
+    settingsKnown = false;
+    const reconciled = await loadSettings();
+    setMessage(elements.editorStatus, t(reconciled ? 'settingsReconciled' : 'settingsKept', { error: errorMessage(error) }), true);
   } finally {
     saving = false;
     elements.fields.disabled = false;
@@ -484,7 +507,7 @@ elements.form.addEventListener('submit', async (event) => {
 });
 
 async function updateCredentials(payload) {
-  if (!savedSettings || saving || credentialsSaving || !capabilitiesKnown) return;
+  if (!savedSettings || saving || settingsLoading || credentialsSaving || !capabilitiesKnown) return;
   credentialsSaving = true;
   elements.credentialsForm.setAttribute('aria-busy', 'true');
   elements.saveCredentials.textContent = t('saving');
@@ -533,7 +556,7 @@ elements.credentialsForm.addEventListener('submit', (event) => {
 });
 
 function removeCredential(provider, key) {
-  if (saving || credentialsSaving || !capabilitiesKnown || !capabilities[provider]) return;
+  if (saving || settingsLoading || credentialsSaving || !capabilitiesKnown || !capabilities[provider]) return;
   const name = provider === 'github' ? 'GitHub' : 'OpenWeatherMap';
   if (!window.confirm(t('confirmRemoval', { name }))) return;
   void updateCredentials({ [key]: '' });
@@ -542,7 +565,7 @@ function removeCredential(provider, key) {
 elements.removeGithub.addEventListener('click', () => removeCredential('github', 'githubToken'));
 elements.removeWeather.addEventListener('click', () => removeCredential('weather', 'weatherKey'));
 elements.refreshIntegrations.addEventListener('click', async () => {
-  if (saving || credentialsSaving) return;
+  if (saving || settingsLoading || credentialsSaving) return;
   credentialsSaving = true;
   elements.credentialsForm.setAttribute('aria-busy', 'true');
   setMessage(elements.credentialsStatus, t('checkingIntegrations'));

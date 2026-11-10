@@ -12,7 +12,9 @@ export function createDevicePanel({ t, locale, request, onChange, onDeviceSaved 
   };
   let saved = null;
   let busy = false;
-  let uncertain = false;
+  let addressKnown = false;
+  let pendingAddress = null;
+  let uncertainAddress = null;
 
   function message(id, text, error = false) {
     byId(id).textContent = text;
@@ -26,16 +28,16 @@ export function createDevicePanel({ t, locale, request, onChange, onDeviceSaved 
   }
 
   function addressDirty() {
-    return saved !== null && address.value !== saved.address;
+    return saved !== null && (!addressKnown || address.value !== saved.address);
   }
 
   function dirty() {
-    return saved !== null && (addressDirty() || Object.entries(configuration())
+    return saved !== null && (addressDirty() || uncertainAddress !== null || Object.entries(configuration())
       .some(([name, value]) => value !== saved.configuration[name]));
   }
 
   function state() {
-    return t(busy ? 'deviceWorking' : !saved ? 'unconfirmed' : uncertain ? 'unconfirmed'
+    return t(busy ? 'deviceWorking' : !saved || !addressKnown || uncertainAddress !== null ? 'unconfirmed'
       : dirty() ? 'unsaved' : !saved.address ? 'deviceNotLinked' : saved.lastSentAt ? 'deviceSentState' : 'deviceNotSent');
   }
 
@@ -56,7 +58,7 @@ export function createDevicePanel({ t, locale, request, onChange, onDeviceSaved 
     byId('device-mode-description').textContent = t(descriptionKeys[mode.value]);
     byId('device-tab-pending').hidden = !dirty();
     const link = byId('device-open');
-    link.hidden = !saved?.address;
+    link.hidden = !saved?.address || !addressKnown;
     if (saved?.address) link.href = `http://${saved.address}/`;
     else link.removeAttribute('href');
     byId('device-last-sent').textContent = saved?.lastSentAt
@@ -73,7 +75,21 @@ export function createDevicePanel({ t, locale, request, onChange, onDeviceSaved 
       throw new Error(t('invalidResponse'));
     }
     saved = device;
+    addressKnown = true;
+    // Only an explicitly chosen different device resolves a previous submission's uncertainty.
+    if (pendingAddress === saved.address && uncertainAddress !== null && uncertainAddress !== saved.address) {
+      uncertainAddress = null;
+      message('device-apply-status', '');
+    }
+    pendingAddress = null;
     onDeviceSaved(device);
+  }
+
+  async function reconcileAddress(error) {
+    accept(await request('/api/device'));
+    byId('device-retry').hidden = true;
+    const confirmed = t('deviceAddressReconciled', { address: saved.address || t('deviceNotLinked') });
+    message('device-connection-status', error ? `${error.message} ${confirmed}` : confirmed, Boolean(error));
   }
 
   async function load() {
@@ -83,13 +99,17 @@ export function createDevicePanel({ t, locale, request, onChange, onDeviceSaved 
     message('device-connection-status', t('loadingSettings'));
     update();
     try {
-      accept(await request('/api/device'));
-      address.value = saved.address;
-      for (const [name, input] of Object.entries(fields)) {
-        if (input.type === 'checkbox') input.checked = saved.configuration[name];
-        else input.value = saved.configuration[name];
+      if (saved) {
+        await reconcileAddress();
+      } else {
+        accept(await request('/api/device'));
+        address.value = saved.address;
+        for (const [name, input] of Object.entries(fields)) {
+          if (input.type === 'checkbox') input.checked = saved.configuration[name];
+          else input.value = saved.configuration[name];
+        }
+        message('device-connection-status', t(saved.address ? 'deviceAddressLoaded' : 'deviceLinkHint'));
       }
-      message('device-connection-status', t(saved.address ? 'deviceAddressLoaded' : 'deviceLinkHint'));
     } catch (error) {
       message('device-connection-status', error.message, true);
       byId('device-retry').hidden = false;
@@ -129,15 +149,23 @@ export function createDevicePanel({ t, locale, request, onChange, onDeviceSaved 
     validate(address);
     if (!addressForm.reportValidity()) return;
     busy = true;
+    pendingAddress = address.value;
     message('device-connection-status', t('saving'));
     update();
     try {
       accept(await request('/api/device', { method: 'PUT', body: JSON.stringify({ address: address.value }) }));
       address.value = saved.address;
-      uncertain = false;
+      byId('device-retry').hidden = true;
       message('device-connection-status', t(saved.address ? 'deviceAddressSaved' : 'deviceUnlinked'));
     } catch (error) {
-      message('device-connection-status', error.message, true);
+      // The write may have persisted even when its response was lost. Keep both drafts.
+      addressKnown = false;
+      try {
+        await reconcileAddress(error);
+      } catch {
+        message('device-connection-status', `${error.message} ${t('deviceAddressUnconfirmed')}`, true);
+        byId('device-retry').hidden = false;
+      }
     } finally {
       busy = false;
       update();
@@ -170,12 +198,14 @@ export function createDevicePanel({ t, locale, request, onChange, onDeviceSaved 
     update();
     try {
       accept(await request('/api/device/apply', { method: 'POST', body: JSON.stringify({ configuration: draft }) }));
-      uncertain = false;
+      uncertainAddress = null;
       message('device-apply-status', t('deviceApplied'));
     } catch (error) {
       // A lost acknowledgement can still mean the hardware accepted the settings.
-      uncertain = !error.status || error.code === 'device_unconfirmed' || (error.status >= 500 && !error.code);
-      message('device-apply-status', uncertain ? t('deviceUnconfirmed') : error.message, true);
+      if (!error.status || error.code === 'device_unconfirmed' || (error.status >= 500 && !error.code)) {
+        uncertainAddress = saved.address;
+      }
+      message('device-apply-status', uncertainAddress !== null ? t('deviceUnconfirmed') : error.message, true);
     } finally {
       busy = false;
       update();

@@ -14,6 +14,8 @@
 A self-hosted control panel for [DeskHub](https://getdeskhub.com/). Configure one
 URL on the device, then choose its content from your browser.
 
+See [CHANGELOG.md](CHANGELOG.md) for release history.
+
 ## Features
 
 - A responsive web panel for custom text, GitHub contribution commits and weather.
@@ -31,9 +33,10 @@ URL on the device, then choose its content from your browser.
   with English as the fallback.
 - Native HTML/CSS/JavaScript, Node.js 26 LTS and Express 5; no frontend build step.
 
-This version has one active source. Rotation, schedules and firmware-level graphics
-are not implemented. The **Device** tab configures the firmware's existing modes;
-it does not install firmware or add new hardware rendering capabilities.
+This version supports one active source or a rotation of selected sources.
+Schedules and firmware-level graphics are not implemented. The **Device** tab
+configures the firmware's existing modes; it does not install firmware or add new
+hardware rendering capabilities.
 
 ## Quick start: OrbStack on macOS
 
@@ -95,6 +98,10 @@ process environment variables take precedence. Local runs use `data.json` beside
 | `npm test` | Run isolated regression tests with Node's native test runner |
 | `./run_dev.sh` | Build and start the OrbStack development container |
 
+Browser regression tests use an installed Firefox (or the executable specified by
+`FIREFOX_BIN`) with an isolated profile and synthetic local APIs. They are skipped
+when Firefox is unavailable; the remaining tests still run.
+
 ## Server configuration
 
 `.env` and `.env-dev` contain only server configuration. They are
@@ -155,6 +162,9 @@ upstream errors and invalid responses surface as errors instead of invented data
 In **Display**, choose GitHub or weather and edit **Message format**. Combine
 ordinary text with variables, insert them at the cursor using the buttons, and
 preview the result before saving. Each source keeps its own format.
+Source settings remain editable without provider credentials. Saving and previewing
+validate the syntax of all retained fields and reveal any invalid field; only the
+sources selected for output require their username or city and provider keys.
 
 | Source | Variables |
 |--------|-----------|
@@ -278,6 +288,10 @@ follow redirects or retry a submission. A successful HTTP acknowledgement does n
 prove the physical display changed or that the firmware persisted the settings.
 If the response is lost, the UI reports an unconfirmed result; inspect the device
 before sending again. Incompatible firmware forms are rejected before any write.
+An unconfirmed submission remains unconfirmed after later connection failures.
+If saving the IP loses its response, the panel rechecks the stored address while
+preserving drafts. Connection checks and submissions stay blocked until the saved
+target is known and matches the IP shown in the form.
 The adapter uses only `GET /` and `POST /submit`; it never calls `/wifi`.
 
 ## Storage and upgrades
@@ -295,13 +309,18 @@ Credential files are created with owner-only permissions (`0600`). Back up the
 whole directory: **both credential files are required to restore API keys**.
 Encryption does not protect against someone who can read both files; restrict
 access to the persistent volume. Runtime data and credentials are excluded from
-Git and the Docker build context.
+Git and the Docker build context. The build context allows only application files;
+custom storage directories outside the application directories are excluded too.
 
 Docker stores data inside `/app/data`, mounted from `./data` in production or
 `./data-dev` in development. Settings and credentials are saved by atomic rename;
 failed saves preserve the previous active values. Legacy `{ "text": "..." }`
 files load as text mode and upgrade on the next save. Corrupt persisted data causes
 startup failure rather than silently replacing it.
+
+When a settings-save response is lost, the panel rereads the saved settings without
+overwriting the draft. If that read also fails, it shows an unconfirmed state and
+allows retrying or saving the draft again instead of claiming everything is saved.
 
 ### Migrate old environment-based integrations
 

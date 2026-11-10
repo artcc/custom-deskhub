@@ -20,8 +20,11 @@ ENV DATA_FILE=/app/data/data.json
 # Copy dependencies from builder
 COPY --from=builder /app/node_modules ./node_modules
 
-# Copy application files
-COPY . .
+# Copy only runtime application files
+COPY package.json package-lock.json index.js ./
+COPY lib/ ./lib/
+COPY public/ ./public/
+COPY locale/ ./locale/
 
 # Create directory for persistent data
 RUN mkdir -p /app/data
