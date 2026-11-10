@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title description">
+  <title id="title">Custom DeskHub — Your desk. Your signal.</title>
+  <desc id="description">A self-hosted DeskHub control panel, with a green D: LED display on a dark background.</desc>
+  <defs>
+    <radialGradient id="ambient" cx="83%" cy="49%" r="65%">
+      <stop stop-color="#283c23"/>
+      <stop offset="1" stop-color="#101411"/>
+    </radialGradient>
+    <linearGradient id="case" x2="0.8" y2="1">
+      <stop stop-color="#2e3927"/>
+      <stop offset="1" stop-color="#171d16"/>
+    </linearGradient>
+    <pattern id="cells" width="14" height="14" patternUnits="userSpaceOnUse">
+      <rect x="2" y="2" width="10" height="10" rx="1" fill="#1b2a1b"/>
+    </pattern>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+    <g id="mark" fill="#b0ee8e">
+      <path d="M2 2h10v10H2z M16 2h10v10H16z M30 2h10v10H30z M44 2h10v10H44z
+               M2 16h10v10H2z M58 16h10v10H58z
+               M2 30h10v10H2z M58 30h10v10H58z
+               M2 44h10v10H2z M58 44h10v10H58z
+               M2 58h10v10H2z M58 58h10v10H58z
+               M2 72h10v10H2z M58 72h10v10H58z
+               M2 86h10v10H2z M16 86h10v10H16z M30 86h10v10H30z M44 86h10v10H44z"/>
+      <rect x="100" y="16" width="10" height="10" rx="1"/>
+      <rect x="100" y="30" width="10" height="10" rx="1"/>
+      <rect x="100" y="58" width="10" height="10" rx="1"/>
+      <rect x="100" y="72" width="10" height="10" rx="1"/>
+    </g>
+  </defs>
+  <rect width="1200" height="630" fill="url(#ambient)"/>
+  <g font-family="Helvetica, Arial, sans-serif">
+    <rect x="64" y="54" width="52" height="52" rx="12" fill="#101411" stroke="#596c4d"/>
+    <text x="90" y="89" text-anchor="middle" font-family="Menlo, Consolas, monospace" font-size="28" font-weight="700" fill="#b0ee8e">D:</text>
+    <text x="132" y="89" font-size="26" font-weight="700" fill="#ecf0e9">Custom DeskHub</text>
+    <text x="1136" y="86" text-anchor="end" font-family="Menlo, Consolas, monospace" font-size="14" letter-spacing="2" fill="#aab5a5">SELF-HOSTED / ESP32</text>
+    <path d="M64 132H1136" stroke="#343e32"/>
+    <text x="64" y="218" font-size="13" letter-spacing="3" font-weight="700" fill="#b0ee8e">YOUR DESK, YOUR WAY</text>
+    <text x="60" y="310" font-size="82" font-weight="700" letter-spacing="-4" fill="#ecf0e9">Your desk.</text>
+    <text x="60" y="398" font-size="82" font-weight="700" letter-spacing="-4" fill="#b0ee8e">Your signal.</text>
+    <text x="64" y="451" font-size="22" fill="#aab5a5">A little signal. Less noise.</text>
+    <rect x="596" y="214" width="540" height="260" rx="24" fill="#080c08" opacity="0.5"/>
+    <rect x="596" y="202" width="540" height="260" rx="24" fill="url(#case)" stroke="#596c4d"/>
+    <rect x="618" y="224" width="496" height="216" rx="12" fill="#080c08" stroke="#343e32"/>
+    <g font-family="Menlo, Consolas, monospace" font-size="11" letter-spacing="2" fill="#aab5a5">
+      <text x="642" y="255">D: / YOUR SIGNAL</text>
+      <circle cx="1084" cy="251" r="4" fill="#b0ee8e"/>
+      <text x="642" y="415">32 × 7 LED MATRIX</text>
+      <text x="1090" y="415" text-anchor="end">LOCAL / CONNECTED</text>
+    </g>
+    <g transform="translate(642 280)">
+      <rect width="448" height="98" fill="url(#cells)"/>
+      <use href="#mark" x="168" filter="url(#glow)" opacity="0.6"/>
+      <use href="#mark" x="168"/>
+    </g>
+    <path d="M64 522H1136" stroke="#343e32"/>
+    <g font-size="17" fill="#d5decf">
+      <text x="64" y="571">Custom messages</text>
+      <circle cx="249" cy="565" r="3" fill="#b0ee8e"/>
+      <text x="272" y="571">GitHub</text>
+      <circle cx="349" cy="565" r="3" fill="#b0ee8e"/>
+      <text x="372" y="571">Weather</text>
+      <text x="1136" y="571" text-anchor="end" fill="#aab5a5">Your device. Your control.</text>
+    </g>
+  </g>
+</svg>

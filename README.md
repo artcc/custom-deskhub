@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/deskhub-logo.svg" alt="DeskHub D: icon" width="88" height="88">
+  <img src="docs/assets/deskhub-logo.svg" alt="DeskHub D: icon" width="88" height="88">
 </p>
 
 <h1 align="center">Custom DeskHub Backend</h1>
@@ -477,6 +477,10 @@ repository URL such as `https://<owner>.github.io/<repository>/`. GitHub Pages
 hosts the project information only; the Express backend and control panel run on
 each user's own private server.
 
+`docs/assets/` contains the favicon and the 1200 × 630 Open Graph image, with its
+editable SVG source. Social metadata in `docs/index.html` uses absolute URLs for
+`https://artcc.github.io/custom-deskhub/`; update them if hosting on another URL.
+
 ## Troubleshooting
 
 - **Source unavailable:** configure its key in Integrations and its username/city
@@ -505,7 +509,7 @@ public/                   HTML, CSS and browser JavaScript
 locale/en.json            English translations and fallback
 locale/es.json            Spanish (Spain) translations
 test/                     Isolated HTTP, CSRF, storage and provider regression tests
-docs/deskhub-logo.svg      README brand icon
+docs/assets/              Brand icon and Open Graph image (PNG and SVG source)
 docs/index.html           English project website for GitHub Pages
 scripts/migrate-env.js    One-time migration of legacy provider configuration
 Dockerfile                Shared production/development image
