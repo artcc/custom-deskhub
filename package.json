@@ -3,10 +3,14 @@
   "version": "1.0.0",
   "description": "Node.js project to extend DeskHub functionality with custom features. Containerized with Docker and deployed using Docker Compose for easy setup.",
   "main": "index.js",
+  "engines": {
+    "node": ">=26 <27",
+    "npm": ">=11 <12"
+  },
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node --env-file-if-exists=.env index.js",
+    "dev": "node --env-file-if-exists=.env --watch index.js",
+    "test": "node --test",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
   },
@@ -14,13 +18,11 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.21.1"
+    "cors": "^2.8.6",
+    "express": "^5.3.0"
   },
   "devDependencies": {
-    "eslint": "^9.39.2",
-    "globals": "^17.2.0",
-    "nodemon": "^3.1.7"
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0"
   }
 }

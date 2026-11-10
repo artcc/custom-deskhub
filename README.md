@@ -1,7 +1,7 @@
 # Custom DeskHub Backend 🖥️
 
-[![Node.js](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
-[![Express](https://img.shields.io/badge/Express-4.21+-blue.svg)](https://expressjs.com/)
+[![Node.js](https://img.shields.io/badge/Node.js-26_LTS-green.svg)](https://nodejs.org/)
+[![Express](https://img.shields.io/badge/Express-5-blue.svg)](https://expressjs.com/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-yellow.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg)](https://www.docker.com/)
 
@@ -45,13 +45,13 @@ A powerful Node.js backend service to extend [DeskHub](https://getdeskhub.com/) 
 
 ## 🛠 Tech Stack
 
-- **Runtime**: Node.js 20+
-- **Framework**: Express.js 4.21+
+- **Runtime**: Node.js 26 LTS
+- **Framework**: Express.js 5
 - **APIs**: GitHub GraphQL API, OpenWeatherMap API
 - **Containerization**: Docker & Docker Compose
-- **Code Quality**: ESLint 9
-- **Development**: Nodemon
-- **Development**: Nodemon
+- **Code Quality**: ESLint 10
+- **Development**: Native Node.js watch mode and `.env` support
+- **Tests**: Native Node.js test runner
 
 ---
 
@@ -59,8 +59,8 @@ A powerful Node.js backend service to extend [DeskHub](https://getdeskhub.com/) 
 
 Before you begin, ensure you have:
 
-- **Node.js** 20 or higher ([Download](https://nodejs.org/))
-- **npm** (comes with Node.js)
+- **Node.js** 26 LTS ([Download](https://nodejs.org/); version specified in `.nvmrc`)
+- **npm** 11 (comes with Node.js 26)
 - **Docker** (optional, for containerized deployment)
 - **GitHub Account** with a personal access token
 - **DeskHub Device** ([Get one here](https://getdeskhub.com/))
@@ -79,7 +79,7 @@ Before you begin, ensure you have:
 
 2. **Install dependencies**
    ```bash
-   npm install
+   npm ci
    ```
 
 3. **Configure environment variables**
@@ -99,13 +99,16 @@ Before you begin, ensure you have:
 
 4. **Start the server**
    ```bash
-   node index.js
+   npm start
    ```
 
    For development with auto-reload:
    ```bash
    npm run dev
    ```
+
+   Both commands load `.env` when present. Existing environment variables take
+   precedence. `npm run dev` restarts the server when the source changes.
 
 ---
 
@@ -119,11 +122,17 @@ Before you begin, ensure you have:
 | `GITHUB_USERNAME` | Your GitHub username | `ArtCC` | ✅ Yes |
 | `PORT` | Server listening port | `3005` | ✅ Yes |
 | `LOCALHOST` | Server URL/IP address | `http://192.168.1.100` | ✅ Yes |
+| `DATA_FILE` | Display text storage path | `/app/data/data.json` | ⚪ Optional |
 | `OPENWEATHER_API_KEY` | OpenWeatherMap API Key ([Get free key](https://openweathermap.org/api)) | `abc123...` | ⚪ Optional |
 | `OPENWEATHER_CITY` | City name for weather | `Madrid` or `London,UK` | ⚪ Optional |
 | `OPENWEATHER_UNITS` | Temperature units | `metric` (°C) or `imperial` (°F) | ⚪ Optional (default: metric) |
 
 > **Note:** Weather variables are optional. The `/weather` endpoint requires `OPENWEATHER_API_KEY` and `OPENWEATHER_CITY` to be set.
+
+Local runs store display text in `data.json` beside `index.js` by default, preserving
+existing files. The Docker image sets `DATA_FILE=/app/data/data.json`, inside the
+`./data:/app/data` mount. Parent directories are created when saving. A failed save
+returns HTTP 500 and keeps the previous in-memory display text.
 
 ### Creating a GitHub Token
 
@@ -277,6 +286,12 @@ curl "http://your-server:3005/weather"
 
 The easiest way to deploy is using the pre-built Docker image from GitHub Container Registry:
 
+**Upgrading an existing container:** older images stored text at `/app/data.json`,
+outside the mounted directory. Before recreating the old container, back up that
+file and copy it to `./data/data.json` on the host. Do not overwrite an existing
+`./data/data.json` without checking which file contains the text you want to keep.
+The new image cannot recover a file from a container that has already been removed.
+
 1. **Create a `.env` file:**
    ```env
    GITHUB_TOKEN=your_github_token
@@ -292,8 +307,6 @@ The easiest way to deploy is using the pre-built Docker image from GitHub Contai
 
 2. **Create a `docker-compose.yml` file:**
    ```yaml
-   version: '3.8'
-
    services:
      custom-deskhub:
        image: ghcr.io/artcc/custom-deskhub:latest
@@ -327,25 +340,25 @@ The easiest way to deploy is using the pre-built Docker image from GitHub Contai
 
 3. **Run the container:**
    ```bash
-   docker-compose up -d
+   docker compose up -d
    ```
 
 **Docker Commands:**
 ```bash
 # View logs
-docker-compose logs -f
+docker compose logs -f
 
 # Check container health
-docker-compose ps
+docker compose ps
 
 # Restart container
-docker-compose restart
+docker compose restart
 
 # Stop container
-docker-compose down
+docker compose down
 
 # Pull latest image
-docker-compose pull && docker-compose up -d
+docker compose pull && docker compose up -d
 ```
 
 ### Building Your Own Image
@@ -371,6 +384,7 @@ docker run -d \
 ### Automated Builds
 
 Every push to `main` branch automatically:
+- ✅ Installs locked dependencies and runs lint and local compatibility tests
 - ✅ Builds a new Docker image
 - ✅ Pushes to GitHub Container Registry
 - ✅ Tags with `latest` and commit SHA
@@ -385,12 +399,31 @@ Every push to `main` branch automatically:
 
 ## 💻 Development
 
+### OrbStack on macOS
+
+Set `GITHUB_TOKEN` in `.env-dev`, then run:
+
+```bash
+./run_dev.sh
+```
+
+The script starts OrbStack if necessary, builds the local image, and waits for a
+healthy container. It uses the standalone `docker-compose-dev.yml`, the same
+Dockerfile as production, and loads `.env-dev`. Development uses the `custom-deskhub-dev` container and
+`./data-dev` storage. Run it again after source changes to rebuild the image.
+Do not commit credentials filled into the versioned environment files.
+
+By default, open `http://localhost:3005/display` on the Mac. Configure the DeskHub
+with `http://<mac-lan-ip>:3005/display`; adjust the port if you change `PORT` in
+`.env-dev`.
+
 ### Available Scripts
 
 | Command | Description |
 |---------|-------------|
 | `npm start` | Start the production server |
-| `npm run dev` | Start with auto-reload (nodemon) |
+| `npm run dev` | Start with auto-reload (Node.js watch mode) |
+| `npm test` | Run isolated HTTP and startup compatibility tests |
 | `npm run lint` | Check code style with ESLint |
 | `npm run lint:fix` | Auto-fix linting issues |
 
@@ -406,7 +439,7 @@ This project uses ESLint with the following rules:
 
 1. Make your changes
 2. Run `npm run lint:fix` to auto-fix style issues
-3. Test your changes locally
+3. Run `npm test` (uses temporary data and no external API credentials)
 4. Commit with meaningful messages
 
 ---
@@ -434,6 +467,13 @@ custom-deskhub/
 
 ## 🔧 Troubleshooting
 
+### Requests appear in logs but the device does not update
+
+Docker's healthcheck also requests `/display` every minute. HTTP logs include
+`status` and the socket peer's `client` address: loopback requests normally come
+from the healthcheck. Docker networking may translate external client addresses,
+so an external request alone does not identify the physical DeskHub.
+
 ### Server won't start
 
 **Error:** `Missing required environment variables`
@@ -460,7 +500,7 @@ custom-deskhub/
 
 ### Docker container exits immediately
 
-**Solution:** Check logs with `docker-compose logs` and verify environment variables
+**Solution:** Check logs with `docker compose logs` and verify environment variables
 
 ---
 

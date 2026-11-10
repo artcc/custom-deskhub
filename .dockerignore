@@ -7,12 +7,15 @@ yarn-debug.log*
 yarn-error.log*
 
 # Ignore environment files
-.env
-.env.local
-.env.*.local
+.env*
 
 # Ignore data files
 data.json
+data/
+data-dev/
+test/
+run_dev.sh
+docker-compose*.yml
 
 # Ignore git
 .git

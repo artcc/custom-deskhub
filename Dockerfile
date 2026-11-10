@@ -1,5 +1,5 @@
 # Build stage
-FROM node:20-alpine AS builder
+FROM node:26-alpine AS builder
 
 WORKDIR /app
 
@@ -7,12 +7,15 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci --only=production
+RUN npm ci --omit=dev
 
 # Production stage
-FROM node:20-alpine
+FROM node:26-alpine
 
 WORKDIR /app
+
+ENV NODE_ENV=production
+ENV DATA_FILE=/app/data/data.json
 
 # Copy dependencies from builder
 COPY --from=builder /app/node_modules ./node_modules

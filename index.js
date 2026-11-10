@@ -25,6 +25,9 @@ const OPENWEATHER_UNITS = process.env.OPENWEATHER_UNITS || 'metric';
 
 const app = express();
 
+// Preserve Express 4 query parsing when upgrading to Express 5.
+app.set('query parser', 'extended');
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -32,13 +35,16 @@ app.use(express.urlencoded({ extended: true }));
 
 // Logging middleware
 app.use((req, res, next) => {
-  const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] ${req.method} ${req.path}`);
+  const client = req.socket.remoteAddress;
+  res.on('finish', () => {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] ${req.method} ${req.path} status=${res.statusCode} client=${client}`);
+  });
   next();
 });
 
 // Persistence for display text
-const DATA_FILE = path.join(__dirname, 'data.json');
+const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, 'data.json');
 
 function loadDisplayText() {
   try {
@@ -53,11 +59,8 @@ function loadDisplayText() {
 }
 
 function saveDisplayText(text) {
-  try {
-    fs.writeFileSync(DATA_FILE, JSON.stringify({ text }), 'utf8');
-  } catch (error) {
-    console.error('[ERROR] Failed to save display text:', error.message);
-  }
+  fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
+  fs.writeFileSync(DATA_FILE, JSON.stringify({ text }), 'utf8');
 }
 
 let newText = loadDisplayText();
@@ -164,8 +167,13 @@ app.get('/setDisplay', (req, res) => {
     return res.status(400).json({ error: 'Missing required parameter: text' });
   }
 
+  try {
+    saveDisplayText(text);
+  } catch (error) {
+    console.error('[ERROR] Failed to save display text:', error.message);
+    return res.status(500).json({ error: 'Failed to save display text' });
+  }
   newText = text;
-  saveDisplayText(newText);
 
   console.log(`[INFO] Display text updated: "${newText}"`);
   res.json({ content: newText });
@@ -228,7 +236,7 @@ app.get('/commits', async (req, res) => {
 
     if (repositories.length > 0) {
       const repoList = repositories.map(repo => {
-        const commits = repo.contributions.nodes.length;
+        const commits = repo.contributions.nodes.reduce((total, node) => total + node.commitCount, 0);
         return `${repo.repository.name}: ${commits}`;
       }).join(', ');
       textResult += ` (${repoList})`;
@@ -290,7 +298,13 @@ app.get('/weather', async (req, res) => {
   }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', (error) => {
+  if (error) {
+    console.error('[ERROR] Failed to start server:', error.message);
+    process.exitCode = 1;
+    return;
+  }
+
   console.log('='.repeat(50));
   console.log('✅ Custom DeskHub Server Started');
   console.log('='.repeat(50));
