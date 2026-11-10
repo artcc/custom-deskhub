@@ -65,6 +65,7 @@ h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.35px; line-
 .source-card:has(input:disabled) .source-detail { color: #a4a9a3; }
 .source-card input { position: absolute; top: 12px; right: 10px; margin: 0; accent-color: var(--accent); width: 14px; height: 14px; }
 .source-icon { font: 18px/28px monospace; color: var(--accent); margin: 4px 0 12px; }
+.source-icon svg { display: block; width: 24px; height: 28px; }
 .source-name { font-size: 13px; font-weight: 650; }
 .source-detail { color: var(--muted); font-size: 11px; margin-top: 3px; }
 .label-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 9px; }
