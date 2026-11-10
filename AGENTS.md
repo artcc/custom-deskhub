@@ -46,6 +46,11 @@
   existing device configurations and callers.
 - `/display` renders the saved source. The panel uses `/api/settings` and
   `/api/preview`; previews never persist settings. `/healthz` must not call providers.
+- Optional source rotation uses the last acknowledged device fetch interval, or
+  60000 ms by default, equally for all included sources in fixed order. Select slots
+  by server time, never request count. `/api/display` reports the rendered source
+  and skipped sources; `/display` keeps its original response shape. Previews render
+  the chosen editor source independently. Rotation must not submit hardware settings.
 - GitHub and weather settings have optional `template` strings, defaulting to
   `{{commits}}` and `{{temperature}} {{unit}}`. Wording belongs in the editable
   template, never in implicit backend summaries. Legacy `{{content}}` is a scalar

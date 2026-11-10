@@ -1,4 +1,4 @@
-export function createDevicePanel({ t, locale, request, onChange }) {
+export function createDevicePanel({ t, locale, request, onChange, onDeviceSaved }) {
   const byId = id => document.getElementById(id);
   const addressForm = byId('device-address-form');
   const form = byId('device-settings-form');
@@ -73,6 +73,7 @@ export function createDevicePanel({ t, locale, request, onChange }) {
       throw new Error(t('invalidResponse'));
     }
     saved = device;
+    onDeviceSaved(device);
   }
 
   async function load() {

@@ -2,10 +2,11 @@ const express = require('express');
 const cors = require('cors');
 const path = require('node:path');
 const { createHash, randomBytes, timingSafeEqual } = require('node:crypto');
-const { loadSettings, saveSettings, validateSettings } = require('./lib/settings');
+const { loadSettings, saveSettings, validateSettings, selectedSources } = require('./lib/settings');
 const { createContentService, displayText } = require('./lib/content');
 const { createCredentialStore, validateCredentials } = require('./lib/credentials');
 const { createDeviceService } = require('./lib/device');
+const { renderDisplay, rotationIntervalMs } = require('./lib/rotation');
 
 const requiredEnvVars = ['PORT', 'LOCALHOST'];
 const missingVars = requiredEnvVars.filter(name => !process.env[name]);
@@ -73,12 +74,13 @@ function noStore(req, res, next) {
   next();
 }
 
-function readSelection(input) {
-  const selection = validateSettings(input);
-  if (selection.mode === 'commits' && !capabilities().github) {
+function readSelection(input, options) {
+  const selection = validateSettings(input, options);
+  const sources = selectedSources(selection, options);
+  if (sources.includes('commits') && !capabilities().github) {
     throw Object.assign(new Error('Configure a GitHub token in the Integrations section.'), { status: 503 });
   }
-  if (selection.mode === 'weather' && !capabilities().weather) {
+  if (sources.includes('weather') && !capabilities().weather) {
     throw Object.assign(new Error('Configure an OpenWeatherMap key in the Integrations section.'), { status: 503 });
   }
   return selection;
@@ -89,11 +91,15 @@ function persist(selection) {
   settings = selection;
 }
 
+function readDisplay() {
+  return renderDisplay(settings, content, { intervalMs: rotationIntervalMs(device.read()) });
+}
+
 // Health is independent of external providers and of the selected display content.
 app.get('/healthz', (req, res) => res.json({ status: 'ok' }));
 app.options(['/display', '/commits', '/weather'], cors());
 app.get('/display', cors(), noStore, async (req, res) => {
-  res.json({ content: await content.render(settings) });
+  res.json({ content: (await readDisplay()).content });
 });
 app.get('/commits', cors(), noStore, async (req, res) => {
   res.json({ content: await content.commits(settings.github) });
@@ -108,7 +114,9 @@ app.get('/setDisplay', noStore, requireCSRF, (req, res) => {
   }
   let selection;
   try {
-    selection = validateSettings({ ...settings, mode: 'text', text: req.query.text });
+    selection = validateSettings({
+      ...settings, mode: 'text', text: req.query.text, rotation: { enabled: false, sources: ['text'] }
+    });
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }
@@ -123,7 +131,10 @@ app.get('/setDisplay', noStore, requireCSRF, (req, res) => {
 
 app.use('/api', noStore);
 app.use('/api', express.json({ limit: '64kb' }));
-app.get('/api/settings', (req, res) => res.json({ settings, capabilities: capabilities(), csrfToken }));
+app.get('/api/settings', (req, res) => res.json({
+  settings, capabilities: capabilities(), csrfToken, rotationIntervalMs: rotationIntervalMs(device.read())
+}));
+app.get('/api/display', async (req, res) => res.json(await readDisplay()));
 app.get('/api/device', (req, res) => res.json({ device: device.read() }));
 app.put('/api/device', requireCSRF, (req, res) => res.json({ device: device.saveAddress(req.body) }));
 app.post('/api/device/check', requireCSRF, async (req, res) => res.json(await device.check()));
@@ -164,7 +175,7 @@ app.put('/api/settings', requireCSRF, (req, res) => {
 app.post('/api/preview', requireCSRF, async (req, res) => {
   let selection;
   try {
-    selection = readSelection(req.body);
+    selection = readSelection(req.body, { preview: true });
   } catch (error) {
     return res.status(error.status || 400).json({ error: error.message });
   }

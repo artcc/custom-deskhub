@@ -17,6 +17,7 @@ URL on the device, then choose its content from your browser.
 ## Features
 
 - A responsive web panel for custom text, GitHub contribution commits and weather.
+- Use any source on its own or rotate a selection with one shared device-derived interval.
 - Independent draft previews and a view of the currently saved `/display` response.
 - A 32 × 7 LED preview with bitmap text, column measurements and optional scroll simulation.
 - Custom message formats combining your own text with GitHub or weather variables.
@@ -185,6 +186,37 @@ count or rounded temperature. A template consisting only of `{{content}}` (inclu
 whitespace inside the braces) loads as the new source-specific default. Custom
 templates retain their literal text, including any wording you wrote yourself.
 
+### Source rotation
+
+In **Display**, enable **Rotate sources**, select at least two of Text, GitHub and
+Weather, then save. Sources run in that fixed order, skipping unchecked entries.
+Each retains its own text or template. The cards below the selection choose which
+source to edit and preview; they do not replace the rotation selection.
+Disable rotation to serve only the source selected in the editor.
+
+Every source uses the same duration: the last fetch interval acknowledged after
+applying settings from **Device**, or **60 seconds** if nothing has been sent yet.
+There are no separate timing controls. Unsaved device edits and failed submissions
+do not change that interval. Changes made in the hardware's own web interface
+cannot be detected; apply the desired interval through this panel to keep it aligned.
+
+Keep the hardware in **API** mode, fetching `/display` with JSON key `content`.
+Rotation changes the response on the server, not the firmware mode. Native GitHub
+graphics, Work Timer and X Followers remain manual options in **Device**.
+
+Slots follow the server clock, using `floor(timestamp / interval) % sourceCount`.
+Extra requests and previews do not advance the schedule; restarting the server
+retains its clock-based phase. Saving or changing the interval may select a
+different current slot. The device only sees a change on its next poll: delays or
+a different polling interval can repeat or skip slots. Provider caches keep their
+existing lifetimes independently of rotation.
+
+If a provider is unavailable, that request tries the next included source. The
+live response card identifies the returned source and any skipped sources;
+settings remain intact. If none can render, the response is an error. An explicitly
+empty message is valid, not a failed source. Preview always renders the source
+currently being edited, independently of the saved schedule.
+
 ### LED preview
 
 The preview renders **32 columns × 7 rows (224 square LED cells)** at a fixed 32:7
@@ -311,20 +343,21 @@ administration responses are sent with `Cache-Control: no-store`.
 
 | Endpoint | Purpose | Access |
 |----------|---------|--------|
-| `GET /display` | Render the saved source: the fixed device URL | Public |
+| `GET /display` | Render the saved source or current rotation slot: the fixed device URL | Public |
 | `GET /commits` | GitHub output using saved GitHub settings | Public |
 | `GET /weather` | Weather output using saved weather settings | Public |
 | `GET /healthz` | `{ "status": "ok" }`, independent of providers | Public |
 | `GET /` | Web control panel | Public |
-| `GET /api/settings` | `{ settings, capabilities, csrfToken }` | Public |
+| `GET /api/settings` | `{ settings, capabilities, csrfToken, rotationIntervalMs }` | Public |
+| `GET /api/display` | Same source selection as `/display`, with `{ content, mode, skippedSources }` for panel diagnostics | Public |
 | `PUT /api/settings` | Validate and persist settings; returns `{ settings }` | CSRF |
-| `POST /api/preview` | Render a draft; returns `{ content, mode }`, without saving | CSRF |
+| `POST /api/preview` | Render the draft's selected `mode`; returns `{ content, mode }`, without saving or rotating | CSRF |
 | `PUT /api/credentials` | Update/remove provider keys; returns `{ capabilities }` | CSRF |
 | `GET /api/device` | Locally remembered `{ device: { address, configuration, lastSentAt } }`; no hardware request | Public |
 | `PUT /api/device` | Save `{ address }` (or empty string to unlink); returns `{ device }` | CSRF |
 | `POST /api/device/check` | Check the saved IP's firmware form; returns `{ compatible: true }` | CSRF |
 | `POST /api/device/apply` | Send `{ configuration }` to the device; remember an acknowledged submission; returns `{ device }` | CSRF |
-| `GET /setDisplay?text=...` | Legacy update: save text and select text mode | CSRF |
+| `GET /setDisplay?text=...` | Legacy update: save text, select text mode and disable rotation | CSRF |
 
 Settings payload:
 
@@ -333,13 +366,21 @@ Settings payload:
   "mode": "text",
   "text": "Hello DeskHub",
   "github": { "username": "artcc", "showRepositories": true, "template": "{{commits}}" },
-  "weather": { "city": "Madrid", "units": "metric", "template": "{{temperature}} {{unit}}" }
+  "weather": { "city": "Madrid", "units": "metric", "template": "{{temperature}} {{unit}}" },
+  "rotation": { "enabled": false, "sources": ["text"] }
 }
 ```
 
 `mode` accepts `text`, `commits` and `weather`. Text is limited to 2048 characters,
 usernames to 39 and cities to 100. Username/city may be empty only when their source
-is not selected. Units accept `metric` and `imperial`.
+is not selected for output. Units accept `metric` and `imperial`.
+When rotation is enabled, `mode` selects the editor/preview source and
+`rotation.sources` selects output sources. Rotation requires at least two distinct
+source names and normalizes their order to `text`, `commits`, `weather`. Disabled
+rotation retains a nonempty selection for later use. Omitting `rotation` defaults
+to `{ "enabled": false, "sources": ["text"] }`, including older settings files.
+Saving requires credentials for all selected output sources; previews require only
+the chosen preview source. `rotationIntervalMs` is derived, not a writable setting.
 Each source's optional `template` defaults to `{{commits}}` or
 `{{temperature}} {{unit}}` when omitted, including when loading older settings
 files. The deprecated `showRepositories` flag is retained for compatibility but

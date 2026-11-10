@@ -108,7 +108,7 @@
         <div class="section-heading">
           <p class="eyebrow">02 / Choose your signal</p>
           <h2 id="features-title">Three sources. One small screen.</h2>
-          <p>Choose one content source in Display, with settings that persist across restarts. Your DeskHub uses its API mode to fetch the result.</p>
+          <p>Choose one content source in Display or rotate your favourites. Settings persist across restarts, and your DeskHub uses its API mode to fetch the result.</p>
         </div>
         <div class="feature-grid">
           <article class="feature-card">
@@ -157,7 +157,7 @@
           <p>Three tabs keep content, provider keys and hardware settings easy to find. Switching tabs preserves your unsaved fields, with visible pending-change indicators.</p>
         </div>
         <ol class="steps">
-          <li><span class="step-number" aria-hidden="true">01</span><h3>Display</h3><p>Choose text, GitHub or weather. Edit the message, generate a draft preview and save the content served at <code>/display</code>.</p></li>
+          <li><span class="step-number" aria-hidden="true">01</span><h3>Display</h3><p>Choose text, GitHub or weather, individually or in rotation. Edit each message, generate a draft preview and save the content served at <code>/display</code>.</p></li>
           <li><span class="step-number" aria-hidden="true">02</span><h3>Integrations</h3><p>Save, replace or remove GitHub and OpenWeatherMap keys. Provider shortcuts help you get a key; saved keys are never shown again.</p></li>
           <li><span class="step-number" aria-hidden="true">03</span><h3>Device</h3><p>Save the hardware’s local IP, check connectivity and apply one of its four built-in display modes, with the options for that mode.</p></li>
         </ol>
@@ -182,6 +182,13 @@
         <p class="section-note">Older formats using only <code>&#123;&#123;content&#125;&#125;</code> load as the new defaults. Inside custom formats, this legacy variable inserts only the commit count or rounded temperature; your literal text is preserved.</p>
         <p class="section-note">The LED grid has 32 columns and 7 rows. Its proportional bitmap font matches the <a href="https://getdeskhub.com/desky.jpeg">official “Hello” example</a> and is clipped to seven rows, which can crop descenders and symbols. Text does not wrap or shrink to fit. Play, pause or scrub the scroll simulation to inspect longer messages. Font, alignment and timing remain a simulation rather than a pixel-for-pixel verified firmware replica; preview controls do not change the device’s scroll setting.</p>
         <a class="text-link" href="https://github.com/artcc/custom-deskhub/blob/main/README.md#custom-message-formats">Message format reference <span aria-hidden="true">↗</span></a>
+        <div class="rotation-guide" aria-labelledby="rotation-title">
+          <h3 id="rotation-title">One favourite, or a rotation.</h3>
+          <p>Enable <strong>Rotate sources</strong> and select at least two sources. The order is Text → GitHub → Weather, with unchecked sources skipped. Each keeps its own message; use the source cards to edit and preview it.</p>
+          <p>Every source gets the same duration: the last fetch interval applied from <strong>Device</strong>, or 60 seconds by default. There are no separate timers to configure. Changes made directly in the hardware’s interface cannot be detected.</p>
+          <p>The device stays in API mode. Unavailable sources are skipped and reported in the panel; if none can render, the response is an error. Rotation follows the server clock, so extra requests do not advance it. The physical display changes on its next poll.</p>
+          <a class="text-link" href="https://github.com/artcc/custom-deskhub/blob/main/README.md#source-rotation">Source rotation reference <span aria-hidden="true">↗</span></a>
+        </div>
       </section>
 
       <section class="section" id="device-control" aria-labelledby="device-title">

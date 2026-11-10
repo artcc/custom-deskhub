@@ -8,6 +8,7 @@ const path = require('node:path');
 const { test } = require('node:test');
 const { createCredentialStore } = require('../lib/credentials');
 const { loadSettings, saveSettings } = require('../lib/settings');
+const { DEFAULT_CONFIGURATION } = require('../lib/device');
 
 const root = path.resolve(__dirname, '..');
 
@@ -491,6 +492,7 @@ test('legacy full settings load and PUT without optional templates', { timeout: 
   const server = await startConfigured(fixture);
   const expected = {
     ...legacy,
+    rotation: { enabled: false, sources: ['text'] },
     github: { ...legacy.github, template: '{{commits}}' },
     weather: { ...legacy.weather, template: '{{temperature}} {{unit}}' }
   };
@@ -514,11 +516,12 @@ test('legacy default templates canonicalize on load and PUT while mixed literals
     const stored = JSON.stringify(legacy);
     await fs.writeFile(dataFile, stored);
     const server = await startConfigured(fixture);
+    const normalized = { ...legacy, rotation: { enabled: false, sources: ['text'] } };
     const expected = exactDefault ? {
-      ...legacy,
+      ...normalized,
       github: { ...legacy.github, template: '{{commits}}' },
       weather: { ...legacy.weather, template: '{{temperature}} {{unit}}' }
-    } : legacy;
+    } : normalized;
     assert.deepEqual((await getSettings(server.url)).settings, expected);
     assert.equal(await fs.readFile(dataFile, 'utf8'), stored);
     const response = await panelRequest(server.url, '/api/settings', legacy);
@@ -780,5 +783,143 @@ test('migration failures retain the environment and existing data', { timeout: 1
     assert.equal(await fs.readFile(envFile, 'utf8'), source);
     assert.equal(await fs.readFile(dataFile, 'utf8'), original);
     assert.deepEqual(store.load(), { githubToken: 'existing-key', weatherKey: '' });
+  }
+});
+
+test('rotation routes share clock phase, provider caches and safe fallback without changing saved settings', { timeout: 10000 }, async t => {
+  const fixture = await createFixture(t);
+  const mocks = await mockProviders(fixture);
+  const clockFile = path.join(fixture.directory, 'clock.txt');
+  const clockPreload = path.join(fixture.directory, 'clock.cjs');
+  await fs.writeFile(clockFile, '60000');
+  await fs.writeFile(clockPreload, `Date.now = () => Number(require('node:fs').readFileSync(${JSON.stringify(clockFile)}, 'utf8'));`);
+  const args = [...mocks.args, '--require', clockPreload];
+  let server = await startConfigured(fixture, { OPENWEATHER_API_KEY: 'test-only-weather-key' }, args);
+  const initial = await getSettings(server.url);
+  assert.equal(initial.rotationIntervalMs, 60000);
+  assert.deepEqual(await (await fetch(`${server.url}/api/display`)).json(), { content: '', mode: 'text', skippedSources: [] });
+  const saved = await panelRequest(server.url, '/api/settings', {
+    ...initial.settings, text: 'Saved message', mode: 'weather',
+    weather: { ...initial.settings.weather, city: 'Madrid' },
+    rotation: { enabled: true, sources: ['weather', 'commits', 'text'] }
+  });
+  assert.equal(saved.status, 200);
+  const { settings } = await saved.json();
+  assert.deepEqual(settings.rotation.sources, ['text', 'commits', 'weather']);
+  const dataFile = path.join(fixture.directory, 'data.json');
+  const stored = await fs.readFile(dataFile, 'utf8');
+  for (let i = 0; i < 3; i++) {
+    const live = await fetch(`${server.url}/api/display`);
+    assert.equal(live.headers.get('cache-control'), 'no-store');
+    assert.equal(live.headers.get('access-control-allow-origin'), null);
+    assert.deepEqual(await live.json(), { content: '7', mode: 'commits', skippedSources: [] });
+    assert.deepEqual(await (await fetch(`${server.url}/display`)).json(), { content: '7' });
+  }
+  const preview = await panelRequest(server.url, '/api/preview', {
+    ...settings, mode: 'text', text: 'Draft', github: { ...settings.github, username: '' },
+    weather: { ...settings.weather, city: '' }
+  }, 'POST');
+  assert.equal(preview.status, 200);
+  assert.deepEqual(await preview.json(), { content: 'Draft', mode: 'text' });
+  assert.deepEqual(await (await fetch(`${server.url}/api/display`)).json(), { content: '7', mode: 'commits', skippedSources: [] });
+  assert.equal(await fs.readFile(dataFile, 'utf8'), stored);
+  for (const [time, mode, content] of [[120000, 'weather', '25 C'], [180000, 'text', 'Saved message'], [240000, 'commits', '7']]) {
+    await fs.writeFile(clockFile, String(time));
+    assert.deepEqual(await (await fetch(`${server.url}/api/display`)).json(), { content, mode, skippedSources: [] });
+  }
+  assert.deepEqual(await (await fetch(`${server.url}/weather`)).json(), { content: '25 C' });
+  assert.deepEqual(await (await fetch(`${server.url}/commits`)).json(), { content: '7' });
+  assert.deepEqual((await fs.readFile(mocks.calls, 'utf8')).trim().split('\n').map(line => JSON.parse(line).provider), ['github', 'weather']);
+  server.child.kill();
+  await server.exited;
+  server = await startConfigured(fixture, {}, args);
+  assert.deepEqual((await getSettings(server.url)).settings, settings);
+  assert.deepEqual(await (await fetch(`${server.url}/api/display`)).json(), { content: '7', mode: 'commits', skippedSources: [] });
+
+  const brokenGithub = { ...settings, github: { ...settings.github, username: 'fail-user' } };
+  assert.equal((await panelRequest(server.url, '/api/settings', brokenGithub)).status, 200);
+  assert.deepEqual(await (await fetch(`${server.url}/api/display`)).json(), { content: '25 C', mode: 'weather', skippedSources: ['commits'] });
+  assert.deepEqual(await (await fetch(`${server.url}/display`)).json(), { content: '25 C' });
+  const failedPreview = await panelRequest(server.url, '/api/preview', { ...brokenGithub, mode: 'commits' }, 'POST');
+  assert.equal(failedPreview.status, 502);
+  assert.deepEqual((await getSettings(server.url)).settings, brokenGithub);
+
+  assert.equal((await panelRequest(server.url, '/api/credentials', { githubToken: '', weatherKey: '' })).status, 200);
+  assert.deepEqual(await (await fetch(`${server.url}/api/display`)).json(), {
+    content: 'Saved message', mode: 'text', skippedSources: ['commits', 'weather']
+  });
+  assert.deepEqual(JSON.parse(await fs.readFile(dataFile, 'utf8')), brokenGithub);
+  assert.equal((await panelRequest(server.url, '/api/credentials', {
+    githubToken: 'test-only-not-a-real-token', weatherKey: 'test-only-weather-key'
+  })).status, 200);
+  const allFailed = { ...brokenGithub, weather: { ...settings.weather, city: 'Broken' },
+    rotation: { enabled: true, sources: ['commits', 'weather'] } };
+  assert.equal((await panelRequest(server.url, '/api/settings', allFailed)).status, 200);
+  for (const endpoint of ['/display', '/api/display']) {
+    const response = await fetch(`${server.url}${endpoint}`);
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { error: 'No display source is currently available.' });
+  }
+  assert.deepEqual((await getSettings(server.url)).settings, allFailed);
+  const legacy = await fetch(`${server.url}/setDisplay?text=Legacy`, { headers: await csrfHeaders(server.url) });
+  assert.equal(legacy.status, 200);
+  assert.deepEqual(await legacy.json(), { content: 'Legacy' });
+  const legacySettings = (await getSettings(server.url)).settings;
+  assert.equal(legacySettings.mode, 'text');
+  assert.deepEqual(legacySettings.rotation, { enabled: false, sources: ['text'] });
+  assert.deepEqual(await (await fetch(`${server.url}/api/display`)).json(), { content: 'Legacy', mode: 'text', skippedSources: [] });
+
+  assert.equal((await panelRequest(server.url, '/api/settings', settings)).status, 200);
+  const oldClient = { ...settings, mode: 'text' };
+  delete oldClient.rotation;
+  const oldClientSave = await panelRequest(server.url, '/api/settings', oldClient);
+  assert.equal(oldClientSave.status, 200);
+  assert.deepEqual((await oldClientSave.json()).settings.rotation, { enabled: false, sources: ['text'] });
+});
+
+test('rotation checks every included credential while preview checks only its selected source', { timeout: 10000 }, async t => {
+  const fixture = await createFixture(t);
+  const server = await startConfigured(fixture, { GITHUB_TOKEN: '' });
+  const { settings } = await getSettings(server.url);
+  const configured = { ...settings, weather: { ...settings.weather, city: 'Madrid' } };
+  for (const sources of [['text', 'commits'], ['text', 'weather']]) {
+    const draft = { ...configured, rotation: { enabled: true, sources } };
+    const response = await panelRequest(server.url, '/api/settings', draft);
+    assert.equal(response.status, 503);
+    assert.match((await response.json()).error, /^Configure /);
+    assert.equal((await panelRequest(server.url, '/api/preview', draft, 'POST')).status, 200);
+  }
+  for (const mode of ['commits', 'weather']) {
+    assert.equal((await panelRequest(server.url, '/api/preview', { ...configured, mode,
+      rotation: { enabled: true, sources: ['text', 'commits', 'weather'] } }, 'POST')).status, 503);
+  }
+  assert.equal((await panelRequest(server.url, '/api/credentials', { githubToken: 'test-only-not-a-real-token' })).status, 200);
+  assert.equal((await panelRequest(server.url, '/api/settings', { ...configured,
+    rotation: { enabled: true, sources: ['commits', 'weather'] } })).status, 503);
+  const editor = { ...settings, mode: 'weather', rotation: { enabled: true, sources: ['text', 'commits'] } };
+  assert.equal((await panelRequest(server.url, '/api/settings', editor)).status, 200);
+  assert.equal((await panelRequest(server.url, '/api/preview', editor, 'POST')).status, 400);
+  assert.equal((await panelRequest(server.url, '/api/preview', { ...settings,
+    rotation: { enabled: true, sources: ['text'] } }, 'POST')).status, 400);
+});
+
+test('settings and display derive the interval from acknowledged device metadata only', { timeout: 10000 }, async t => {
+  for (const lastSentAt of [null, '2026-01-01T00:00:00.000Z']) {
+    const fixture = await createFixture(t);
+    const mocks = await mockProviders(fixture);
+    const clockPreload = path.join(fixture.directory, 'clock.cjs');
+    await fs.writeFile(clockPreload, 'Date.now = () => 60000;');
+    await fs.writeFile(path.join(fixture.directory, 'device.json'), JSON.stringify({
+      address: '192.168.1.2', lastSentAt,
+      configuration: { ...DEFAULT_CONFIGURATION, apiUrl: 'http://localhost/display', fetchRate: 120000 }
+    }));
+    const server = await startConfigured(fixture, {}, [...mocks.args, '--require', clockPreload]);
+    const response = await getSettings(server.url);
+    assert.equal(response.rotationIntervalMs, lastSentAt ? 120000 : 60000);
+    assert.equal((await panelRequest(server.url, '/api/settings', { ...response.settings, text: 'Text slot',
+      rotation: { enabled: true, sources: ['text', 'commits'] } })).status, 200);
+    assert.deepEqual(await (await fetch(`${server.url}/api/display`)).json(), lastSentAt
+      ? { content: 'Text slot', mode: 'text', skippedSources: [] }
+      : { content: '7', mode: 'commits', skippedSources: [] });
   }
 });

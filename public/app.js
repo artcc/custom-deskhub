@@ -34,6 +34,10 @@ const elements = {
   city: document.getElementById('weather-city'),
   units: document.getElementById('weather-units'),
   weatherTemplate: document.getElementById('weather-template'),
+  rotationEnabled: document.getElementById('rotation-enabled'),
+  rotationOptions: document.getElementById('rotation-options'),
+  rotationInterval: document.getElementById('rotation-interval'),
+  rotationStatus: document.getElementById('rotation-status'),
   save: document.getElementById('save-button'),
   preview: document.getElementById('preview-button'),
   saveState: document.getElementById('save-state'),
@@ -45,6 +49,8 @@ const elements = {
   previewPanel: document.getElementById('preview-panel'),
   liveContent: document.getElementById('live-content'),
   liveStatus: document.getElementById('live-status'),
+  liveSource: document.getElementById('live-source'),
+  liveSkipped: document.getElementById('live-skipped'),
   livePanel: document.getElementById('live-panel'),
   refresh: document.getElementById('refresh-display'),
   credentialsForm: document.getElementById('credentials-form'),
@@ -63,6 +69,10 @@ const templateVariables = {
   weather: ['content', 'city', 'temperature', 'unit', 'condition']
 };
 const templateDefaults = { github: '{{commits}}', weather: '{{temperature}} {{unit}}' };
+const sourceRadios = [...document.querySelectorAll('input[name="mode"]')];
+const sourceModes = sourceRadios.map(input => input.value);
+const rotationInputs = [...document.querySelectorAll('input[name="rotationSource"]')];
+const sourceName = mode => sourceRadios.find(input => input.value === mode).closest('label').querySelector('.source-name').textContent;
 
 function hasInvalidTemplate(input) {
   const variables = templateVariables[input === elements.githubTemplate ? 'github' : 'weather'];
@@ -108,6 +118,7 @@ let capabilitiesKnown = false;
 let revision = 0;
 let previewController = null;
 let displayController = null;
+let rotationIntervalMs = 60000;
 const tabNames = ['display', 'integrations', 'device'];
 let activeTab = tabNames.includes(window.location.hash.slice(1)) ? window.location.hash.slice(1) : 'display';
 let devicePanel = null;
@@ -130,7 +141,8 @@ function readSettings() {
     mode: document.querySelector('input[name="mode"]:checked').value,
     text: elements.text.value,
     github: { username: elements.username.value, showRepositories: legacyShowRepositories, template: elements.githubTemplate.value },
-    weather: { city: elements.city.value, units: elements.units.value, template: elements.weatherTemplate.value }
+    weather: { city: elements.city.value, units: elements.units.value, template: elements.weatherTemplate.value },
+    rotation: { enabled: elements.rotationEnabled.checked, sources: rotationInputs.filter(input => input.checked).map(input => input.value) }
   };
 }
 
@@ -145,6 +157,48 @@ function writeSettings(settings) {
   elements.city.value = settings.weather.city;
   elements.units.value = settings.weather.units;
   elements.weatherTemplate.value = settings.weather.template ?? templateDefaults.weather;
+  elements.rotationEnabled.checked = settings.rotation?.enabled ?? false;
+  for (const input of rotationInputs) input.checked = (settings.rotation?.sources ?? ['text']).includes(input.value);
+}
+
+function selectedSources(settings = readSettings()) {
+  return settings.rotation.enabled ? settings.rotation.sources : [settings.mode];
+}
+
+function canSaveSelection() {
+  const settings = readSettings();
+  return (!settings.rotation.enabled || settings.rotation.sources.length >= 2)
+    && selectedSources(settings).every(isAvailable);
+}
+
+function validateSources(sources) {
+  for (const mode of sources) {
+    const fieldset = document.getElementById(`fields-${mode}`);
+    fieldset.disabled = false;
+    const inputs = [...fieldset.querySelectorAll('input, textarea, select')];
+    for (const input of inputs) localizeValidation(input);
+    const invalid = inputs.find(input => !input.validity.valid);
+    if (invalid) {
+      const radio = sourceRadios.find(input => input.value === mode);
+      if (!radio.checked) {
+        radio.checked = true;
+        invalidatePreview();
+      }
+      updateControls();
+      invalid.reportValidity();
+      invalid.focus();
+      return false;
+    }
+    fieldset.disabled = mode !== readSettings().mode;
+  }
+  return true;
+}
+
+function updateRotationInterval(value) {
+  if (Number.isInteger(value) && value >= 1000 && value <= 86400000) rotationIntervalMs = value;
+  elements.rotationInterval.textContent = t('rotationInterval', {
+    seconds: new Intl.NumberFormat(locale, { maximumFractionDigits: 3 }).format(rotationIntervalMs / 1000)
+  });
 }
 
 function isAvailable(mode) {
@@ -164,8 +218,15 @@ function isDirty() {
 }
 
 function updateControls() {
-  const mode = readSettings().mode;
-  for (const name of ['text', 'commits', 'weather']) {
+  const settings = readSettings();
+  const { mode, rotation } = settings;
+  elements.rotationOptions.hidden = !rotation.enabled;
+  document.getElementById('source-picker-title').textContent = t(rotation.enabled ? 'rotationEditSource' : 'contentSource');
+  const missingSources = selectedSources(settings).filter(source => !isAvailable(source));
+  const rotationProblem = rotation.sources.length < 2 ? t('rotationMinimum')
+    : missingSources.length ? t('rotationMissing', { sources: missingSources.map(sourceName).join(', ') }) : '';
+  setMessage(elements.rotationStatus, rotationProblem, Boolean(rotationProblem));
+  for (const name of sourceModes) {
     const fieldset = document.getElementById(`fields-${name}`);
     fieldset.hidden = name !== mode;
     fieldset.disabled = name !== mode;
@@ -173,7 +234,7 @@ function updateControls() {
   const dirty = isDirty();
   const keysPending = Boolean(elements.githubToken.value || elements.weatherKey.value);
   const keyCount = Number(capabilities.github) + Number(capabilities.weather);
-  elements.save.disabled = !savedSettings || saving || credentialsSaving || !dirty || !isAvailable(mode);
+  elements.save.disabled = !savedSettings || saving || credentialsSaving || !dirty || !canSaveSelection();
   elements.preview.disabled = !savedSettings || saving || credentialsSaving || previewController !== null || !isAvailable(mode);
   const displayState = t(saving ? 'saving' : !savedSettings ? 'disconnected' : dirty ? 'unsaved' : 'allSaved');
   const integrationState = credentialsSaving ? t('saving') : keysPending ? t('keysPending')
@@ -232,7 +293,7 @@ async function request(url, options = {}) {
   const timeout = window.setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, 20000);
+  }, url === '/api/display' ? 30000 : 20000);
   try {
     const response = await fetch(url, {
       ...options,
@@ -291,12 +352,13 @@ async function loadSettings() {
     }
     applyCapabilities(data.capabilities);
     csrfToken = data.csrfToken;
+    updateRotationInterval(data.rotationIntervalMs);
     writeSettings(data.settings);
     savedSettings = readSettings();
     void devicePanel.load();
     elements.fields.disabled = false;
     setMessage(elements.loadStatus, '');
-    if (!isAvailable(savedSettings.mode)) {
+    if (!selectedSources(savedSettings).every(isAvailable)) {
       setMessage(elements.editorStatus, t('savedSourceUnavailable'), true);
     }
   } catch (error) {
@@ -309,7 +371,7 @@ async function loadSettings() {
 }
 
 async function generatePreview() {
-  if (!savedSettings || saving || credentialsSaving || !isAvailable(readSettings().mode) || !elements.form.reportValidity()) return;
+  if (!savedSettings || saving || credentialsSaving || !isAvailable(readSettings().mode) || !validateSources([readSettings().mode])) return;
   const currentRevision = revision;
   const controller = new AbortController();
   previewController = controller;
@@ -318,13 +380,15 @@ async function generatePreview() {
   setMessage(elements.previewStatus, t('queryingPreview'));
   updateControls();
   try {
-    const data = await request('/api/preview', { method: 'POST', body: JSON.stringify(readSettings()), signal: controller.signal });
+    const draft = { ...readSettings(), rotation: { enabled: false, sources: [readSettings().mode] } };
+    const data = await request('/api/preview', { method: 'POST', body: JSON.stringify(draft), signal: controller.signal });
     if (currentRevision !== revision || controller.signal.aborted) return;
     if (typeof data.content !== 'string') throw new PanelError(t('invalidPreview'));
     elements.previewContent.textContent = data.content || t('emptyText');
     elements.previewContent.classList.toggle('placeholder', !data.content);
     ledPreview.setText(data.content);
-    setMessage(elements.previewStatus, t('previewGenerated'));
+    setMessage(elements.previewStatus, elements.rotationEnabled.checked
+      ? t('rotationPreviewSource', { source: sourceName(draft.mode) }) : t('previewGenerated'));
   } catch (error) {
     if (currentRevision !== revision || controller.signal.aborted) return;
     elements.previewContent.textContent = t('previewUnavailable');
@@ -349,14 +413,23 @@ async function refreshDisplay() {
   elements.refresh.textContent = t('querying');
   elements.livePanel.setAttribute('aria-busy', 'true');
   setMessage(elements.liveStatus, t('queryingSaved'));
+  elements.liveSource.hidden = elements.liveSkipped.hidden = true;
   try {
-    const data = await request('/display', { signal: controller.signal });
+    const data = await request('/api/display', { signal: controller.signal });
     if (controller.signal.aborted) return;
-    if (typeof data.content !== 'string') throw new PanelError(t('invalidContent'));
+    if (typeof data.content !== 'string' || !sourceModes.includes(data.mode) ||
+        !Array.isArray(data.skippedSources) || data.skippedSources.some(source => !sourceModes.includes(source))) {
+      throw new PanelError(t('invalidContent'));
+    }
     elements.liveContent.textContent = data.content || t('emptyText');
     elements.liveContent.classList.toggle('placeholder', !data.content);
     const time = new Date().toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     setMessage(elements.liveStatus, t('lastChecked', { time }));
+    elements.liveSource.textContent = t('liveSource', { source: sourceName(data.mode) });
+    elements.liveSource.hidden = false;
+    elements.liveSkipped.hidden = data.skippedSources.length === 0;
+    setMessage(elements.liveSkipped, data.skippedSources.length
+      ? t('rotationSkipped', { sources: data.skippedSources.map(sourceName).join(', ') }) : '', true);
   } catch (error) {
     if (controller.signal.aborted) return;
     elements.liveContent.textContent = t('contentUnavailable');
@@ -372,7 +445,10 @@ async function refreshDisplay() {
   }
 }
 
-elements.form.addEventListener('input', () => {
+elements.form.addEventListener('input', event => {
+  if (event.target === elements.rotationEnabled && !elements.rotationEnabled.checked && !rotationInputs.some(input => input.checked)) {
+    rotationInputs.find(input => input.value === readSettings().mode).checked = true;
+  }
   invalidatePreview();
   setMessage(elements.editorStatus, '');
   updateControls();
@@ -380,7 +456,7 @@ elements.form.addEventListener('input', () => {
 
 elements.form.addEventListener('submit', async (event) => {
   event.preventDefault();
-  if (!savedSettings || saving || credentialsSaving || !isDirty() || !isAvailable(readSettings().mode) || !elements.form.reportValidity()) return;
+  if (!savedSettings || saving || credentialsSaving || !isDirty() || !canSaveSelection() || !validateSources(selectedSources())) return;
   const settings = readSettings();
   saving = true;
   elements.fields.disabled = true;
@@ -476,6 +552,7 @@ elements.refreshIntegrations.addEventListener('click', async () => {
     if (typeof data.csrfToken !== 'string') throw new PanelError(t('missingCsrf'));
     applyCapabilities(data.capabilities);
     csrfToken = data.csrfToken;
+    updateRotationInterval(data.rotationIntervalMs);
     setMessage(elements.credentialsStatus, t('integrationsChecked'));
     void refreshDisplay();
   } catch (error) {
@@ -544,7 +621,10 @@ function restoreTab() {
 window.addEventListener('popstate', restoreTab);
 window.addEventListener('hashchange', restoreTab);
 if (!window.location.hash) window.history.replaceState(null, '', `#${activeTab}`);
-devicePanel = createDevicePanel({ t, locale, request, onChange: updateControls });
+devicePanel = createDevicePanel({ t, locale, request, onChange: updateControls, onDeviceSaved: device => {
+  updateRotationInterval(device.lastSentAt ? device.configuration.fetchRate : 60000);
+} });
+updateRotationInterval(rotationIntervalMs);
 selectTab(activeTab, { history: false });
 
 document.getElementById('device-url').textContent = `${window.location.origin}/display`;
