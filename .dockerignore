@@ -22,3 +22,5 @@
 **/data.json.*.tmp
 **/device.json
 **/device.json.*.tmp
+**/pomodoro.json
+**/pomodoro.json.*.tmp

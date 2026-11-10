@@ -12,6 +12,112 @@ const { DEFAULT_CONFIGURATION } = require('../lib/device');
 
 const root = path.resolve(__dirname, '..');
 
+test('Pomodoro HTTP controls, previews and restart use the server clock without changing the device', { timeout: 15000 }, async t => {
+  const fixture = await createFixture(t);
+  const clockFile = path.join(fixture.directory, 'clock.txt');
+  const preload = path.join(fixture.directory, 'clock.cjs');
+  let now = Date.UTC(2026, 10, 10);
+  const setTime = async value => { now = value; await fs.writeFile(clockFile, String(now)); };
+  await setTime(now);
+  await fs.writeFile(preload, `Date.now = () => Number(require('node:fs').readFileSync(${JSON.stringify(clockFile)}, 'utf8'));`);
+  let server = await startConfigured(fixture, { GITHUB_TOKEN: '', OPENWEATHER_API_KEY: '' }, ['--require', preload]);
+  let headers = { 'Content-Type': 'application/json', ...await csrfHeaders(server.url) };
+  const get = async endpoint => {
+    const response = await fetch(`${server.url}${endpoint}`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    return response.json();
+  };
+  const write = async (endpoint, method, body, status = 200, requestHeaders = headers) => {
+    const response = await fetch(`${server.url}${endpoint}`, { method, headers: requestHeaders, body: JSON.stringify(body) });
+    assert.equal(response.status, status);
+    return response.json();
+  };
+  const timerFile = path.join(fixture.directory, 'pomodoro.json');
+  const initial = (await get('/api/pomodoro')).pomodoro;
+  assert.equal(initial.status, 'idle');
+  assert.equal(initial.content, '25:00');
+  assert.equal(initial.revision, 0);
+  await assert.rejects(fs.access(timerFile), { code: 'ENOENT' });
+  const originalSettings = (await get('/api/settings')).settings;
+  const configuration = { ...initial.configuration, workMinutes: 1, shortBreakMinutes: 1,
+    longBreakMinutes: 2, sessionsBeforeLongBreak: 2, autoStartWork: true, template: '{{phase}} {{time}}' };
+  for (const [endpoint, method, body] of [
+    ['/api/pomodoro', 'PUT', { configuration, revision: 0 }],
+    ['/api/pomodoro/actions', 'POST', { action: 'start', revision: 0 }]
+  ]) await write(endpoint, method, body, 403, { 'Content-Type': 'application/json' });
+  await write('/api/pomodoro', 'PUT', { configuration: { ...configuration, workMinutes: 0 }, revision: 0 }, 400);
+  await write('/api/pomodoro/actions', 'POST', { action: 'start' }, 400);
+  await write('/api/pomodoro/actions', 'POST', { action: 'start', revision: 0, unexpected: true }, 400);
+  await write('/api/pomodoro/actions', 'POST', { action: 'delete', revision: 0 }, 400);
+  let snapshot = (await write('/api/pomodoro', 'PUT', { configuration, revision: 0 })).pomodoro;
+  assert.equal(snapshot.revision, 1);
+  snapshot = (await write('/api/pomodoro/actions', 'POST', { action: 'start', revision: 1 })).pomodoro;
+  assert.equal(snapshot.endsAt, now + 60000);
+  const conflict = await write('/api/pomodoro/actions', 'POST', { action: 'start', revision: 1 }, 409);
+  assert.equal(conflict.code, 'pomodoro_conflict');
+  await write('/api/pomodoro', 'PUT', { configuration, revision: 2 }, 409);
+  const stored = await fs.readFile(timerFile, 'utf8');
+  await setTime(now + 1500);
+  const draft = { ...originalSettings, mode: 'pomodoro' };
+  assert.equal((await write('/api/preview', 'POST', draft)).content, 'WORK 00:59');
+  assert.deepEqual((await get('/api/settings')).settings, originalSettings);
+  await write('/api/settings', 'PUT', draft);
+  assert.deepEqual(await get('/display'), { content: 'WORK 00:59' });
+  assert.deepEqual(await get('/api/display'), { content: 'WORK 00:59', mode: 'pomodoro', skippedSources: [] });
+  assert.equal(await fs.readFile(timerFile, 'utf8'), stored);
+  await setTime(snapshot.endsAt);
+  snapshot = (await get('/api/pomodoro')).pomodoro;
+  assert.equal(snapshot.content, 'BREAK 01:00');
+  assert.equal(snapshot.completedSessions, 1);
+  snapshot = (await write('/api/pomodoro/actions', 'POST', { action: 'pause', revision: 2 })).pomodoro;
+  await setTime(now + 100000);
+  assert.equal((await get('/api/pomodoro')).pomodoro.remainingMs, 60000);
+  snapshot = (await write('/api/pomodoro/actions', 'POST', { action: 'resume', revision: snapshot.revision })).pomodoro;
+  snapshot = (await write('/api/pomodoro/actions', 'POST', { action: 'skip', revision: snapshot.revision })).pomodoro;
+  assert.equal(snapshot.session, 2);
+  assert.equal(snapshot.completedSessions, 1);
+  await setTime(snapshot.endsAt);
+  snapshot = (await get('/api/pomodoro')).pomodoro;
+  assert.equal(snapshot.content, 'LONG BREAK 02:00');
+  assert.equal(snapshot.completedSessions, 2);
+  await setTime(now + 30000);
+  server.child.kill();
+  await server.exited;
+  server = await startConfigured(fixture, { GITHUB_TOKEN: '', OPENWEATHER_API_KEY: '' }, ['--require', preload]);
+  headers = { 'Content-Type': 'application/json', ...await csrfHeaders(server.url) };
+  assert.equal((await get('/display')).content, 'LONG BREAK 01:30');
+  await write('/api/credentials', 'PUT', { githubToken: 'synthetic-pomodoro-test' });
+  assert.equal((await get('/display')).content, 'LONG BREAK 01:30', 'credential updates must retain the timer');
+  snapshot = (await write('/api/pomodoro/actions', 'POST', { action: 'reset', revision: snapshot.revision })).pomodoro;
+  assert.equal(snapshot.status, 'idle');
+  assert.equal(snapshot.session, 1);
+  assert.equal(snapshot.completedSessions, 0);
+  assert.equal(snapshot.content, 'WORK 01:00');
+  const device = (await get('/api/device')).device;
+  assert.equal(device.configuration.fetchRate, 60000);
+  assert.equal(device.lastSentAt, null);
+  await assert.rejects(fs.access(path.join(fixture.directory, 'device.json')), { code: 'ENOENT' });
+  assert.doesNotMatch(server.output(), /synthetic-pomodoro-test/);
+});
+
+test('Pomodoro persistence failure is reported safely and does not start the timer', { timeout: 10000 }, async t => {
+  const fixture = await createFixture(t);
+  const server = await startConfigured(fixture);
+  await fs.mkdir(path.join(fixture.directory, 'pomodoro.json'));
+  const response = await fetch(`${server.url}/api/pomodoro/actions`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...await csrfHeaders(server.url) },
+    body: JSON.stringify({ action: 'start', revision: 0 })
+  });
+  assert.equal(response.status, 500);
+  const data = await response.json();
+  assert.equal(data.code, 'pomodoro_storage');
+  assert.ok(!data.error.includes(fixture.directory));
+  const snapshot = (await (await fetch(`${server.url}/api/pomodoro`)).json()).pomodoro;
+  assert.equal(snapshot.status, 'idle');
+  assert.equal(snapshot.revision, 0);
+});
+
 async function csrfHeaders(url) {
   const response = await fetch(`${url}/api/settings`);
   assert.equal(response.status, 200);

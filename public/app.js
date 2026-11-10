@@ -1,6 +1,7 @@
 import { loadI18n } from './i18n.js';
 import { createDevicePanel } from './device.js';
 import { createLedPreview } from './led-preview.js';
+import { createPomodoroPanel } from './pomodoro.js';
 
 const preferences = navigator.languages?.length ? navigator.languages : [navigator.language];
 const { locale, t } = await loadI18n(preferences).catch(error => {
@@ -125,9 +126,10 @@ let revision = 0;
 let previewController = null;
 let displayController = null;
 let rotationIntervalMs = 60000;
-const tabNames = ['display', 'integrations', 'device'];
+const tabNames = ['display', 'integrations', 'pomodoro', 'device'];
 let activeTab = tabNames.includes(window.location.hash.slice(1)) ? window.location.hash.slice(1) : 'display';
 let devicePanel = null;
+let pomodoroPanel = null;
 const ledPreview = createLedPreview({ t });
 
 const deviceErrorKeys = {
@@ -135,6 +137,10 @@ const deviceErrorKeys = {
   device_incompatible: 'deviceIncompatible', device_unreachable: 'deviceUnreachable',
   device_unconfirmed: 'deviceUnconfirmed', device_busy: 'deviceBusy',
   device_configuration: 'deviceConfigurationError', device_storage: 'deviceStorageError'
+};
+const pomodoroErrorKeys = {
+  pomodoro_configuration: 'pomodoroConfigurationError', pomodoro_conflict: 'pomodoroConflictError',
+  pomodoro_state: 'pomodoroStateError', pomodoro_storage: 'pomodoroStorageError'
 };
 
 function setMessage(element, message, error = false) {
@@ -210,7 +216,7 @@ function updateRotationInterval(value) {
 }
 
 function isAvailable(mode) {
-  return mode === 'text' || (capabilitiesKnown && (mode === 'commits' ? capabilities.github : capabilities.weather));
+  return ['text', 'pomodoro'].includes(mode) || (capabilitiesKnown && (mode === 'commits' ? capabilities.github : capabilities.weather));
 }
 
 function applyCapabilities(value) {
@@ -251,9 +257,10 @@ function updateControls() {
   const displayState = t(saving ? 'saving' : !savedSettings ? 'disconnected' : !settingsKnown ? 'unconfirmed' : dirty ? 'unsaved' : 'allSaved');
   const integrationState = credentialsSaving ? t('saving') : keysPending ? t('keysPending')
     : !capabilitiesKnown ? t('unconfirmed') : t('keysSummary', { count: keyCount, total: 2 });
-  const state = activeTab === 'device' ? (devicePanel?.state() || t('loadingSettings')) : activeTab === 'display' ? displayState : integrationState;
+  const utilityPanel = activeTab === 'device' ? devicePanel : activeTab === 'pomodoro' ? pomodoroPanel : null;
+  const state = utilityPanel ? utilityPanel.state() : activeTab === 'display' ? displayState : integrationState;
   if (elements.saveState.textContent !== state) elements.saveState.textContent = state;
-  elements.saveState.classList.toggle('unsaved', activeTab === 'device' ? Boolean(devicePanel?.dirty()) : activeTab === 'display' ? dirty : keysPending);
+  elements.saveState.classList.toggle('unsaved', utilityPanel ? Boolean(utilityPanel.dirty()) : activeTab === 'display' ? dirty : keysPending);
   document.getElementById('display-tab-pending').hidden = !dirty;
   document.getElementById('integrations-tab-pending').hidden = !keysPending;
   document.getElementById('integration-count').textContent = capabilitiesKnown ? `${keyCount}/2` : '—';
@@ -280,6 +287,7 @@ function selectTab(name, { focus = false, history = true } = {}) {
   const hidingFocus = document.getElementById(activeTab).contains(document.activeElement) && name !== activeTab;
   activeTab = name;
   ledPreview.setActive(name === 'display');
+  pomodoroPanel?.setActive(name === 'pomodoro');
   for (const tabName of tabNames) {
     const selected = tabName === name;
     const tab = document.getElementById(`tab-${tabName}`);
@@ -287,8 +295,10 @@ function selectTab(name, { focus = false, history = true } = {}) {
     tab.tabIndex = selected ? 0 : -1;
     document.getElementById(tabName).hidden = !selected;
   }
-  document.getElementById('page-title').textContent = t(name === 'device' ? 'deviceHeading' : name === 'display' ? 'heading' : 'integrationsHeading');
-  document.getElementById('page-intro').textContent = t(name === 'device' ? 'devicePageIntro' : name === 'display' ? 'intro' : 'integrationsPageIntro');
+  const headings = { display: 'heading', integrations: 'integrationsHeading', device: 'deviceHeading', pomodoro: 'pomodoroHeading' };
+  const intros = { display: 'intro', integrations: 'integrationsPageIntro', device: 'devicePageIntro', pomodoro: 'pomodoroPageIntro' };
+  document.getElementById('page-title').textContent = t(headings[name]);
+  document.getElementById('page-intro').textContent = t(intros[name]);
   if (history && window.location.hash !== `#${name}`) window.history.pushState(null, '', `#${name}`);
   if (focus || hidingFocus) document.getElementById(`tab-${name}`).focus({ preventScroll: true });
   updateControls();
@@ -316,6 +326,10 @@ async function request(url, options = {}) {
     });
     const data = await response.json().catch(() => null);
     if (!response.ok) {
+      if (url.startsWith('/api/pomodoro')) {
+        const key = response.status === 403 ? 'csrfError' : Object.hasOwn(pomodoroErrorKeys, data?.code) ? pomodoroErrorKeys[data.code] : null;
+        throw Object.assign(new PanelError(key ? t(key) : t('requestError', { status: response.status })), { status: response.status });
+      }
       if (url.startsWith('/api/device')) {
         const key = response.status === 403 ? 'csrfError' : Object.hasOwn(deviceErrorKeys, data?.code) ? deviceErrorKeys[data.code] : null;
         throw Object.assign(new PanelError(key ? t(key) : t('requestError', { status: response.status })), {
@@ -365,6 +379,7 @@ async function loadSettings() {
     }
     applyCapabilities(data.capabilities);
     csrfToken = data.csrfToken;
+    void pomodoroPanel.load();
     updateRotationInterval(data.rotationIntervalMs);
     const draft = savedSettings ? readSettings() : null;
     writeSettings(data.settings);
@@ -647,6 +662,7 @@ if (!window.location.hash) window.history.replaceState(null, '', `#${activeTab}`
 devicePanel = createDevicePanel({ t, locale, request, onChange: updateControls, onDeviceSaved: device => {
   updateRotationInterval(device.lastSentAt ? device.configuration.fetchRate : 60000);
 } });
+pomodoroPanel = createPomodoroPanel({ t, request, onChange: updateControls });
 updateRotationInterval(rotationIntervalMs);
 selectTab(activeTab, { history: false });
 

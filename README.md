@@ -18,7 +18,9 @@ See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Features
 
-- A responsive web panel for custom text, GitHub contribution commits and weather.
+- A responsive web panel for custom text, GitHub contribution commits, weather and Pomodoro.
+- A configurable Pomodoro with work/short/long breaks, pause/resume, automatic
+  starts and persistent timer state independent of the browser.
 - Use any source on its own or rotate a selection with one shared device-derived interval.
 - Independent draft previews and a view of the currently saved `/display` response.
 - A 32 × 7 LED preview with bitmap text, column measurements and optional scroll simulation.
@@ -128,9 +130,9 @@ locale files to change copy, keeping keys and interpolation variables aligned.
 
 ## Integrations
 
-The panel has three tabs: **Display** for content and previews; **Integrations**
-for provider keys; **Device** for the hardware's display modes. Switching tabs preserves unsaved fields.
-The selected tab is reflected in `#display`, `#integrations` or `#device`, including browser
+The panel has four tabs: **Display** for content and previews; **Integrations**
+for provider keys; **Pomodoro** for focus sessions; **Device** for the hardware's display modes. Switching tabs preserves unsaved fields.
+The selected tab is reflected in `#display`, `#integrations`, `#pomodoro` or `#device`, including browser
 back/forward navigation. Missing-key links open the matching provider card.
 
 Manage provider keys in the panel's **Integrations** tab. Password fields
@@ -200,8 +202,8 @@ templates retain their literal text, including any wording you wrote yourself.
 
 ### Source rotation
 
-In **Display**, enable **Rotate sources**, select at least two of Text, GitHub and
-Weather, then save. Sources run in that fixed order, skipping unchecked entries.
+In **Display**, enable **Rotate sources**, select at least two of Text, GitHub,
+Weather and Pomodoro, then save. Sources run in that fixed order, skipping unchecked entries.
 Each retains its own text or template. The cards below the selection choose which
 source to edit and preview; they do not replace the rotation selection.
 Disable rotation to serve only the source selected in the editor.
@@ -229,7 +231,69 @@ settings remain intact. If none can render, the response is an error. An explici
 empty message is valid, not a failed source. Preview always renders the source
 currently being edited, independently of the saved schedule.
 
-### LED preview
+## Pomodoro
+
+The **Pomodoro** tab runs a server-managed focus timer. Defaults are 25 minutes
+of work, 5 minutes of short break, a 15-minute long break every 4 work sessions,
+automatic breaks enabled and automatic work starts disabled. Durations accept
+whole minutes from 1 to 240; the long-break interval accepts 1 to 12 sessions.
+
+1. Configure the durations, automatic starts and message format, then save.
+2. Choose **Pomodoro** in **Display** and save to show it on the DeskHub. It needs
+   no provider key. It can also participate in the existing source rotation.
+3. Use **Start**, **Pause**, **Resume**, **Skip** and **Reset** in the Pomodoro tab.
+
+Starting the timer does not select a display source or change device settings.
+The timer keeps running while another source is displayed. For a continuous
+countdown, select Pomodoro as the single source. Use the device's **API** mode
+with `/display` and JSON key `content`, rather than its separate native Work Timer.
+
+The device receives a string snapshot on each request. **To see seconds advance,
+set the device fetch interval to 1000 ms yourself in Device.** At 60000 ms it
+updates approximately once per minute. Pomodoro never changes that interval or
+submits hardware settings. Rotation retains its existing device-derived interval.
+The browser timer updates independently and does not confirm physical display output.
+
+### Timer behavior
+
+- The remaining time comes from server timestamps, not request counts. Closing
+  the browser or restarting the server does not pause a running timer. Missed
+  phases advance according to their original deadlines and automatic-start options.
+- When automatic start is disabled for the next phase, it waits at its full
+  duration until **Start**. A paused phase retains its remaining time.
+- **Skip** advances to the next phase without counting the skipped work as
+  completed. It follows automatic-start options; skipping while paused keeps
+  the next phase paused. The cycle position advances even for skipped work.
+- **Reset** ends the current run, clears the completed count and returns to the
+  first work session, ready to start. Save configuration changes while idle;
+  reset an existing run first. Controls always use the saved configuration.
+- Only naturally finished work phases count as completed sessions. After a long
+  break the cycle starts again; the completed count continues until reset.
+- State and configuration are persisted together in `pomodoro.json`. Reads,
+  display requests and previews derive the current state without writing to disk.
+  Failed writes preserve the previous state. Concurrent or stale control requests
+  return HTTP 409; a lost acknowledgement is reconciled by reading the timer,
+  never by automatically repeating an action.
+
+### Output format
+
+The default template is `{{time}}`, for example `24:59`. Formats accept up to
+2048 characters and these variables:
+
+| Variable | Value |
+|----------|-------|
+| `{{time}}` | Remaining `MM:SS`, rounded up to the next second; minutes can exceed 99 |
+| `{{phase}}` | `WORK`, `BREAK` or `LONG BREAK` |
+| `{{status}}` | `IDLE`, `RUNNING`, `PAUSED` or `READY` |
+| `{{session}}` | Current work position within the cycle, also retained during its break |
+| `{{completed}}` | Naturally completed work sessions since reset |
+
+For example, `{{phase}} {{time}}` produces `WORK 24:59`. Final output is printable
+ASCII, capped at 2048 output characters; use the LED preview to check message width. The Display preview samples
+the current timer using its saved Pomodoro configuration; it never starts,
+pauses or resets the timer. Unsaved Pomodoro edits do not affect that preview.
+
+## LED preview
 
 The preview renders **32 columns × 7 rows (224 square LED cells)** at a fixed 32:7
 ratio, following the device owner's correction of the initial photo count.
@@ -306,6 +370,7 @@ The directory containing `DATA_FILE` holds:
 | `credentials.json` | AES-256-GCM encrypted provider keys |
 | `credentials.key` | Random local encryption key |
 | `device.json` | Optional device IP and last acknowledged display configuration |
+| `pomodoro.json` | Pomodoro configuration, revision and timer state |
 
 Credential files are created with owner-only permissions (`0600`). Back up the
 whole directory: **both credential files are required to restore API keys**.
@@ -373,6 +438,9 @@ administration responses are sent with `Cache-Control: no-store`.
 | `GET /api/display` | Same source selection as `/display`, with `{ content, mode, skippedSources }` for panel diagnostics | Public |
 | `PUT /api/settings` | Validate and persist settings; returns `{ settings }` | CSRF |
 | `POST /api/preview` | Render the draft's selected `mode`; returns `{ content, mode }`, without saving or rotating | CSRF |
+| `GET /api/pomodoro` | Read the derived timer snapshot as `{ pomodoro }` | Public |
+| `PUT /api/pomodoro` | Save `{ configuration, revision }` while idle; returns `{ pomodoro }` | CSRF |
+| `POST /api/pomodoro/actions` | Apply `{ action, revision }`; returns `{ pomodoro }` | CSRF |
 | `PUT /api/credentials` | Update/remove provider keys; returns `{ capabilities }` | CSRF |
 | `GET /api/device` | Locally remembered `{ device: { address, configuration, lastSentAt } }`; no hardware request | Public |
 | `PUT /api/device` | Save `{ address }` (or empty string to unlink); returns `{ device }` | CSRF |
@@ -392,12 +460,12 @@ Settings payload:
 }
 ```
 
-`mode` accepts `text`, `commits` and `weather`. Text is limited to 2048 characters,
+`mode` accepts `text`, `commits`, `weather` and `pomodoro`. Text is limited to 2048 characters,
 usernames to 39 and cities to 100. Username/city may be empty only when their source
 is not selected for output. Units accept `metric` and `imperial`.
 When rotation is enabled, `mode` selects the editor/preview source and
 `rotation.sources` selects output sources. Rotation requires at least two distinct
-source names and normalizes their order to `text`, `commits`, `weather`. Disabled
+source names and normalizes their order to `text`, `commits`, `weather`, `pomodoro`. Disabled
 rotation retains a nonempty selection for later use. Omitting `rotation` defaults
 to `{ "enabled": false, "sources": ["text"] }`, including older settings files.
 Saving requires credentials for all selected output sources; previews require only
@@ -412,6 +480,38 @@ Credentials payload supports `githubToken` and `weatherKey`: omitted fields are
 unchanged, a nonempty string replaces a key, and `""` removes it. Unknown fields,
 non-string values, whitespace and values exceeding 8192 characters are rejected.
 Credentials are never returned by an API.
+
+Pomodoro configuration payload:
+
+```json
+{
+  "configuration": {
+    "workMinutes": 25,
+    "shortBreakMinutes": 5,
+    "longBreakMinutes": 15,
+    "sessionsBeforeLongBreak": 4,
+    "autoStartBreaks": true,
+    "autoStartWork": false,
+    "template": "{{time}}"
+  },
+  "revision": 0
+}
+```
+
+Use the latest `revision` from `GET /api/pomodoro` in every write. Actions accept
+`start` (idle/waiting), `pause` (running), `resume` (paused), `skip`
+(running/paused/waiting) and `reset` (any state). Invalid configuration or action
+names return 400; stale revisions and invalid state transitions return 409.
+Pomodoro errors include a controlled `code`: `pomodoro_configuration`,
+`pomodoro_conflict`, `pomodoro_state` or `pomodoro_storage`.
+
+The snapshot includes `configuration`, `revision`, `serverNow` (epoch milliseconds),
+`phase` (`work`, `shortBreak`, `longBreak`), `status` (`idle`, `running`, `paused`,
+`waiting`), `remainingMs`, `durationMs`, `endsAt` (epoch milliseconds or null),
+`session`, `completedSessions` and the rendered `content`. Automatic phase
+transitions do not increment the write revision. Existing installations get an
+idle default timer without rewriting their settings; its file is created on the
+first successful Pomodoro write.
 
 Device configuration payload (all fields are required, including inactive modes):
 
@@ -501,7 +601,9 @@ lib/content.js            Provider requests, formatting and caching
 lib/settings.js           Validation, migration and atomic settings persistence
 lib/credentials.js        Validation and encrypted credential storage
 lib/device.js             Device form compatibility, configuration and HTTP adapter
+lib/pomodoro.js           Persistent clock-based focus timer and output formatting
 public/device.js          Device tab and independent hardware configuration draft
+public/pomodoro.js        Pomodoro controls, configuration draft and browser countdown
 public/led-preview.js     224-cell SVG preview and local playback controls
 public/led-layout.js      Bitmap message layout and clipped matrix frames
 public/led-font.js        Separately licensed MD_MAX72XX printable ASCII font data

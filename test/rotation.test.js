@@ -89,6 +89,18 @@ test('interval uses only acknowledged device configuration', () => {
   assert.equal(rotationIntervalMs({ lastSentAt: '2026-01-01T00:00:00.000Z', configuration: { fetchRate: 15000 } }), 15000);
 });
 
+test('Pomodoro is a credential-free source with a stable rotation slot and independent timer', async () => {
+  const settings = validateSettings({ ...defaults, mode: 'pomodoro',
+    rotation: { enabled: true, sources: ['pomodoro', 'text'] } });
+  assert.deepEqual(settings.rotation.sources, ['text', 'pomodoro']);
+  const content = { render: async selection => selection.mode === 'pomodoro' ? '24:59' : selection.text };
+  assert.deepEqual(await renderDisplay(settings, content, { now: () => 60000 }), {
+    content: '24:59', mode: 'pomodoro', skippedSources: []
+  });
+  assert.equal((await renderDisplay(settings, content, { now: () => 120000 })).mode, 'text');
+  assert.equal(settings.mode, 'pomodoro');
+});
+
 test('fallback follows the included cycle, reports only safe source names and accepts empty content', async () => {
   const snapshot = structuredClone(rotating);
   const calls = [];

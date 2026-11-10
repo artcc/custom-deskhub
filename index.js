@@ -7,6 +7,7 @@ const { createContentService, displayText } = require('./lib/content');
 const { createCredentialStore, validateCredentials } = require('./lib/credentials');
 const { createDeviceService } = require('./lib/device');
 const { renderDisplay, rotationIntervalMs } = require('./lib/rotation');
+const { createPomodoroService } = require('./lib/pomodoro');
 
 const requiredEnvVars = ['PORT', 'LOCALHOST'];
 const missingVars = requiredEnvVars.filter(name => !process.env[name]);
@@ -30,15 +31,17 @@ const defaults = {
 let settings;
 let credentials;
 let device;
+let pomodoro;
 try {
   settings = loadSettings(DATA_FILE, defaults);
   credentials = credentialStore.load();
   device = createDeviceService(DATA_FILE);
+  pomodoro = createPomodoroService(DATA_FILE);
 } catch (error) {
   console.error('[ERROR] Failed to load display settings:', error.message);
   process.exit(1);
 }
-let content = createContentService(credentials);
+let content = createContentService({ ...credentials, pomodoro });
 
 function capabilities() {
   return { github: Boolean(credentials.githubToken), weather: Boolean(credentials.weatherKey) };
@@ -135,6 +138,23 @@ app.get('/api/settings', (req, res) => res.json({
   settings, capabilities: capabilities(), csrfToken, rotationIntervalMs: rotationIntervalMs(device.read())
 }));
 app.get('/api/display', async (req, res) => res.json(await readDisplay()));
+app.get('/api/pomodoro', (req, res) => res.json({ pomodoro: pomodoro.read() }));
+function pomodoroBody(req, fields) {
+  const body = req.body;
+  if (!body || typeof body !== 'object' || Array.isArray(body) ||
+      Object.keys(body).length !== fields.length || fields.some(field => !Object.hasOwn(body, field))) {
+    throw Object.assign(new Error('Invalid Pomodoro request.'), { status: 400, code: 'pomodoro_configuration' });
+  }
+  return body;
+}
+app.put('/api/pomodoro', requireCSRF, (req, res) => {
+  const { configuration, revision } = pomodoroBody(req, ['configuration', 'revision']);
+  res.json({ pomodoro: pomodoro.configure(configuration, revision) });
+});
+app.post('/api/pomodoro/actions', requireCSRF, (req, res) => {
+  const { action, revision } = pomodoroBody(req, ['action', 'revision']);
+  res.json({ pomodoro: pomodoro.act(action, revision) });
+});
 app.get('/api/device', (req, res) => res.json({ device: device.read() }));
 app.put('/api/device', requireCSRF, (req, res) => res.json({ device: device.saveAddress(req.body) }));
 app.post('/api/device/check', requireCSRF, async (req, res) => res.json(await device.check()));
@@ -154,7 +174,7 @@ app.put('/api/credentials', requireCSRF, (req, res) => {
   }
   credentials = updated;
   // Replacing a provider key also discards any cached responses under the old key.
-  content = createContentService(credentials);
+  content = createContentService({ ...credentials, pomodoro });
   res.json({ capabilities: capabilities() });
 });
 app.put('/api/settings', requireCSRF, (req, res) => {
@@ -199,6 +219,9 @@ app.use((error, req, res, next) => {
   const status = error.status || 500;
   console.error(`[ERROR] ${req.method} ${req.path} failed with status ${status}.`);
   if (error.deviceError) return res.status(status).json({ error: error.message, code: error.code });
+  if (['pomodoro_configuration', 'pomodoro_conflict', 'pomodoro_state', 'pomodoro_storage'].includes(error.code)) {
+    return res.status(status).json({ error: error.message, code: error.code });
+  }
   res.status(status).json({ error: error.status ? error.message : 'Internal server error.' });
 });
 

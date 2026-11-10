@@ -10,6 +10,7 @@ const path = require('node:path');
 const { test } = require('node:test');
 const { DEFAULT_CONFIGURATION } = require('../lib/device');
 const { validateSettings } = require('../lib/settings');
+const { createPomodoroService } = require('../lib/pomodoro');
 
 const root = path.resolve(__dirname, '..');
 const firefox = [process.env.FIREFOX_BIN, '/Applications/Firefox.app/Contents/MacOS/firefox', '/usr/bin/firefox']
@@ -27,8 +28,11 @@ test('frontend persistence and validation regressions in Firefox', {
     settings: validateSettings({ mode: 'text', text: 'Original', github: { username: '' }, weather: { city: '', units: 'metric' } }),
     device: { address: '192.168.1.50', configuration: { ...DEFAULT_CONFIGURATION, mode: 'timer' }, lastSentAt: null },
     failSettingsRead: false, failSettingsWrite: false, failDeviceRead: false, failAddressWrite: false, applyError: null,
+    failPomodoroRead: false, failPomodoroWrite: false,
+    clockOffset: 0,
     calls: []
   };
+  const pomodoro = createPomodoroService(path.join(directory, 'data.json'), { now: () => Date.now() + state.clockOffset });
   const server = http.createServer(async (request, response) => {
     const pathname = new URL(request.url, 'http://localhost').pathname;
     const json = (data, status = 200) => {
@@ -49,10 +53,25 @@ test('frontend persistence and validation regressions in Firefox', {
           else if (state.failSettingsRead) return json({}, 503);
           return json({ settings: state.settings, capabilities: { github: false, weather: false }, csrfToken: 'synthetic-csrf' });
         }
-        if (pathname === '/api/display') return json({ content: state.settings.text, mode: 'text', skippedSources: [] });
+        if (pathname === '/api/pomodoro') {
+          if (request.method === 'PUT') {
+            if (state.failPomodoroWrite) return json({ code: 'pomodoro_storage' }, 500);
+            return json({ pomodoro: pomodoro.configure(body.configuration, body.revision) });
+          }
+          if (state.failPomodoroRead) return json({}, 503);
+          return json({ pomodoro: pomodoro.read() });
+        }
+        if (pathname === '/api/pomodoro/actions') {
+          if (state.failPomodoroWrite) return json({ code: 'pomodoro_storage' }, 500);
+          return json({ pomodoro: pomodoro.act(body.action, body.revision) });
+        }
+        if (pathname === '/api/display') return json({
+          content: state.settings.mode === 'pomodoro' ? pomodoro.render() : state.settings.text,
+          mode: state.settings.mode === 'pomodoro' ? 'pomodoro' : 'text', skippedSources: []
+        });
         if (pathname === '/api/preview') {
           const settings = validateSettings(body, { preview: true });
-          return json({ content: settings.text });
+          return json({ content: settings.mode === 'pomodoro' ? pomodoro.render() : settings.text });
         }
         if (pathname === '/api/device') {
           if (request.method === 'PUT') {
@@ -80,8 +99,8 @@ test('frontend persistence and validation regressions in Firefox', {
       const content = await fsp.readFile(file);
       response.writeHead(200, { 'Content-Type': ({ '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.css': 'text/css' })[path.extname(file)] || 'application/octet-stream' });
       response.end(content);
-    } catch {
-      json({}, 400);
+    } catch (error) {
+      json({ code: error.code }, error.status || 400);
     }
   });
   let browser;
@@ -160,18 +179,31 @@ test('frontend persistence and validation regressions in Firefox', {
   const writes = pathname => state.calls.filter(call => call.pathname === pathname && call.method === 'PUT').length;
   const idle = () => waitFor(`${element('settings-form')}.getAttribute('aria-busy') === 'false'`);
   const deviceIdle = () => waitFor(`${element('device-settings-form')}.getAttribute('aria-busy') === 'false'`);
+  const pomodoroIdle = () => waitFor(`${element('pomodoro-settings-form')}.getAttribute('aria-busy') === 'false'`);
+  const timerAction = action => `document.querySelector('[data-pomodoro-action="${action}"]')`;
+  async function control(action) {
+    await waitFor(`!${timerAction(action)}.disabled && !${timerAction(action)}.hidden`);
+    await evaluate(`${timerAction(action)}.click()`);
+    await pomodoroIdle();
+  }
+  async function openPomodoro() {
+    await open('pomodoro');
+    await waitFor(`!${element('pomodoro-refresh')}.disabled`);
+    await pomodoroIdle();
+    await evaluate('window.confirm = () => true');
+  }
   async function open(tab = 'display') {
     await command('browsingContext.navigate', { context, url: `${url}/?case=${sequence}#${tab}`, wait: 'complete' });
     await waitFor(`!${element('editor-fields')}.disabled && !${element('device-address-fields')}.disabled`);
     state.calls.length = 0;
   }
-  async function loseNextWrite(pathname) {
+  async function loseNextWrite(pathname, method = 'PUT') {
     // The server completes the write, but the UI receives a transport failure instead of its acknowledgement.
     await evaluate(`{
       const original = window.fetch;
       window.fetch = async (url, options) => {
         const response = await original(url, options);
-        if (url === ${JSON.stringify(pathname)} && options?.method === 'PUT') {
+        if (url === ${JSON.stringify(pathname)} && options?.method === ${JSON.stringify(method)}) {
           window.fetch = original;
           await response.text();
           throw new TypeError('Synthetic lost acknowledgement');
@@ -364,4 +396,156 @@ test('frontend persistence and validation regressions in Firefox', {
     assert.equal(await value('save-state', 'textContent'), 'Unsaved changes');
     assert.equal(await value('device-apply-status', 'textContent'), '');
   });
+
+  await t.test('Pomodoro configuration, keyboard tabs and display preview work without provider keys', async () => {
+    await openPomodoro();
+    const beforeDevice = structuredClone(state.device);
+    assert.equal(await value('pomodoro-counter', 'textContent'), '25:00');
+    await click('tab-integrations');
+    await evaluate(`${element('tab-integrations')}.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))`);
+    assert.equal(await evaluate('document.activeElement.id'), 'tab-pomodoro');
+    assert.equal(await value('pomodoro', 'hidden'), false);
+    await pomodoroIdle();
+    await edit('pomodoro-work', '0');
+    await click('pomodoro-save');
+    assert.equal(await evaluate('document.activeElement.id'), 'pomodoro-work');
+    assert.equal(writes('/api/pomodoro'), 0);
+    await edit('pomodoro-work', '30');
+    await edit('pomodoro-template', '{{unknown}}');
+    await click('pomodoro-save');
+    assert.equal(await evaluate('document.activeElement.id'), 'pomodoro-template');
+    assert.equal(writes('/api/pomodoro'), 0);
+    await edit('pomodoro-template', '{{phase}} {{time}}');
+    await click('tab-display');
+    await click('tab-pomodoro');
+    await pomodoroIdle();
+    assert.equal(await value('pomodoro-work'), '30');
+    assert.equal(await value('pomodoro-tab-pending', 'hidden'), false);
+    await click('pomodoro-save');
+    await pomodoroIdle();
+    assert.equal(pomodoro.read().configuration.workMinutes, 30);
+    assert.equal(await value('pomodoro-output', 'textContent'), 'WORK 30:00');
+    assert.equal(await value('pomodoro-tab-pending', 'hidden'), true);
+    await click('tab-display');
+    await click('mode-pomodoro');
+    assert.equal(await value('preview-button', 'disabled'), false);
+    await click('preview-button');
+    await waitFor(`${element('preview-content')}.textContent === 'WORK 30:00'`);
+    assert.equal(pomodoro.read().status, 'idle');
+    await click('save-button');
+    await idle();
+    assert.equal(state.settings.mode, 'pomodoro');
+    await waitFor(`${element('live-content')}.textContent === 'WORK 30:00'`);
+    assert.deepEqual(state.device, beforeDevice);
+    assert.equal(state.calls.filter(call => call.pathname.startsWith('/api/device') && call.method !== 'GET').length, 0);
+  });
+
+  await t.test('Pomodoro controls preserve drafts, count locally and survive browser reloads', async () => {
+    await openPomodoro();
+    await edit('pomodoro-work', '40');
+    await control('start');
+    assert.equal(pomodoro.read().configuration.workMinutes, 30, 'start uses saved configuration');
+    assert.equal(await value('pomodoro-work'), '40');
+    await waitFor(`${element('pomodoro-counter')}.textContent !== '30:00'`);
+    await control('pause');
+    assert.equal(await value('pomodoro-run-status', 'textContent'), 'Paused');
+    const paused = pomodoro.read().remainingMs;
+    await click('tab-display');
+    await click('tab-pomodoro');
+    await pomodoroIdle();
+    assert.equal(await value('pomodoro-work'), '40');
+    assert.equal(pomodoro.read().remainingMs, paused);
+    await control('resume');
+    await control('skip');
+    assert.equal(await value('pomodoro-phase', 'textContent'), 'Short break');
+    assert.equal(pomodoro.read().completedSessions, 0);
+    await openPomodoro();
+    assert.equal(await value('pomodoro-phase', 'textContent'), 'Short break');
+    assert.equal(await value('pomodoro-work'), '30');
+    await control('reset');
+    assert.equal(await value('pomodoro-counter', 'textContent'), '30:00');
+    assert.equal(await value('pomodoro-settings-fields', 'disabled'), false);
+    await command('browsingContext.setViewport', { context, viewport: { width: 390, height: 844 } });
+    assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true);
+    await command('browsingContext.setViewport', { context, viewport: { width: 1200, height: 900 } });
+  });
+
+  await t.test('Pomodoro reconciles lost acknowledgements and stale revisions without repeating commands', async () => {
+    await openPomodoro();
+    await edit('pomodoro-work', '35');
+    await loseNextWrite('/api/pomodoro');
+    await click('pomodoro-save');
+    await pomodoroIdle();
+    assert.equal(pomodoro.read().configuration.workMinutes, 35);
+    assert.match(await value('pomodoro-feedback', 'textContent'), /may have been applied/);
+    assert.equal(writes('/api/pomodoro'), 1);
+    await edit('pomodoro-work', '45');
+    state.failPomodoroRead = true;
+    await loseNextWrite('/api/pomodoro/actions', 'POST');
+    await control('start');
+    assert.equal(pomodoro.read().status, 'running');
+    assert.equal(await value('save-state', 'textContent'), 'Unconfirmed');
+    assert.equal(await evaluate(`${timerAction('reset')}.disabled`), true);
+    assert.equal(state.calls.filter(call => call.pathname === '/api/pomodoro/actions').length, 1);
+    state.failPomodoroRead = false;
+    await click('pomodoro-refresh');
+    await pomodoroIdle();
+    assert.equal(await value('pomodoro-work'), '45');
+    assert.equal(await value('pomodoro-run-status', 'textContent'), 'Running');
+    await control('reset');
+    const revision = pomodoro.read().revision;
+    pomodoro.act('start', revision); // Another tab wins the write race.
+    await control('start');
+    assert.equal(pomodoro.read().revision, revision + 1);
+    assert.equal(await value('pomodoro-run-status', 'textContent'), 'Running');
+    assert.match(await value('pomodoro-feedback', 'textContent'), /another request/);
+    assert.equal(await value('pomodoro-work'), '45');
+    await control('reset');
+  });
+
+  await t.test('Pomodoro refresh preserves focused edits while a read is in flight', async () => {
+    await openPomodoro();
+    await edit('pomodoro-work', '50');
+    await evaluate(`{
+      const original = window.fetch;
+      window.fetch = async (url, options) => {
+        const response = await original(url, options);
+        if (url === '/api/pomodoro' && !options?.method) {
+          window.fetch = original;
+          await new Promise(resolve => window.setTimeout(resolve, 300));
+        }
+        return response;
+      };
+      ${element('pomodoro-refresh')}.click();
+      ${element('pomodoro-work')}.focus();
+    }`);
+    assert.equal(await value('pomodoro-settings-fields', 'disabled'), false);
+    assert.equal(await evaluate('document.activeElement.id'), 'pomodoro-work');
+    await pomodoroIdle();
+    assert.equal(await value('pomodoro-work'), '50');
+    assert.equal(await evaluate('document.activeElement.id'), 'pomodoro-work');
+  });
+
+  await t.test('Pomodoro refreshes at a phase deadline and waits for manual starts', async () => {
+    const current = pomodoro.read();
+    pomodoro.configure({ ...current.configuration, workMinutes: 1, longBreakMinutes: 1,
+      sessionsBeforeLongBreak: 1, autoStartBreaks: false, autoStartWork: false }, current.revision);
+    pomodoro.act('start', pomodoro.read().revision);
+    state.clockOffset = 59000;
+    await openPomodoro();
+    await waitFor(`${element('pomodoro-phase')}.textContent === 'Long break'`);
+    assert.equal(await value('pomodoro-run-status', 'textContent'), 'Waiting to start the next phase');
+    assert.equal(await value('pomodoro-counter', 'textContent'), '01:00');
+    assert.match(await value('pomodoro-sessions', 'textContent'), /Completed: 1/);
+    await control('start');
+    state.clockOffset += 60000;
+    await click('pomodoro-refresh');
+    await pomodoroIdle();
+    assert.equal(await value('pomodoro-phase', 'textContent'), 'Focus');
+    assert.equal(await value('pomodoro-run-status', 'textContent'), 'Waiting to start the next phase');
+    assert.equal(await value('pomodoro-counter', 'textContent'), '01:00');
+    await control('reset');
+    state.clockOffset = 0;
+  });
+  assert.deepEqual(browserErrors, []);
 });

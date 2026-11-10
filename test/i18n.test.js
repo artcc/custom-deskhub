@@ -26,7 +26,7 @@ test('locale files cover UI keys and preserve interpolation variables', async ()
     assert.deepEqual(placeholders(english[key]), placeholders(spanish[key]), key);
   }
   const html = await fs.readFile(path.join(root, 'public/index.html'), 'utf8');
-  const app = (await Promise.all(['app.js', 'device.js', 'led-preview.js'].map(file => fs.readFile(path.join(root, 'public', file), 'utf8')))).join('\n');
+  const app = (await Promise.all(['app.js', 'device.js', 'pomodoro.js', 'led-preview.js'].map(file => fs.readFile(path.join(root, 'public', file), 'utf8')))).join('\n');
   const keys = [
     ...[...html.matchAll(/data-i18n(?:-[\w-]+)?="(\w+)"/g)].map(match => match[1]),
     ...[...app.matchAll(/\bt\('([^']+)'/g)].map(match => match[1])

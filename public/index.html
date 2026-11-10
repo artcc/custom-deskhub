@@ -33,6 +33,10 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 3v5m8-5v5M6 8h12v3a6 6 0 0 1-12 0V8Zm6 9v4"/></svg>
               <span data-i18n="integrations">Integrations</span><span id="integration-count" class="tab-count" aria-hidden="true">—</span><span id="integrations-tab-pending" class="tab-pending" hidden><span class="sr-only" data-i18n="unsaved">Unsaved changes</span></span>
             </button>
+            <button id="tab-pomodoro" class="workspace-tab" type="button" role="tab" aria-selected="false" aria-controls="pomodoro" data-tab="pomodoro" tabindex="-1">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="14" r="8"/><path d="M9 2h6m-3 0v4m0 4v5l3 2M18 6l2-2"/></svg>
+              <span data-i18n="pomodoroTab">Pomodoro</span><span id="pomodoro-tab-pending" class="tab-pending" hidden><span class="sr-only" data-i18n="unsaved">Unsaved changes</span></span>
+            </button>
             <button id="tab-device" class="workspace-tab" type="button" role="tab" aria-selected="false" aria-controls="device" data-tab="device" tabindex="-1">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="3"/><path d="M9 1v4m6-4v4M9 19v4m6-4v4M1 9h4m-4 6h4m14-6h4m-4 6h4M9 9h6v6H9z"/></svg>
               <span data-i18n="deviceTab">Device</span><span id="device-tab-pending" class="tab-pending" hidden><span class="sr-only" data-i18n="unsaved">Unsaved changes</span></span>
@@ -63,9 +67,10 @@
                         <label><input type="checkbox" name="rotationSource" value="text" checked><span data-i18n="text">Text</span></label>
                         <label><input type="checkbox" name="rotationSource" value="commits"><span>GitHub</span></label>
                         <label><input type="checkbox" name="rotationSource" value="weather"><span data-i18n="weather">Weather</span></label>
+                        <label><input type="checkbox" name="rotationSource" value="pomodoro"><span data-i18n="pomodoroTab">Pomodoro</span></label>
                       </div>
                     </fieldset>
-                    <p id="rotation-hint" class="hint" data-i18n="rotationHint">Choose at least two. The order is Text → GitHub → Weather; each keeps its own message. Use API mode on the device.</p>
+                    <p id="rotation-hint" class="hint" data-i18n="rotationHint">Choose at least two. The order is Text → GitHub → Weather → Pomodoro; each keeps its own message. Use API mode on the device.</p>
                     <p id="rotation-interval" class="hint"></p>
                     <p id="rotation-status" class="message" role="status" aria-live="polite"></p>
                   </div>
@@ -76,6 +81,7 @@
                     <label class="source-card"><input type="radio" name="mode" value="text" checked><span class="source-icon" aria-hidden="true">Aa</span><span class="source-name" data-i18n="text">Text</span><span class="source-detail" data-i18n="yourMessage">Your message</span></label>
                     <label class="source-card"><input id="mode-commits" type="radio" name="mode" value="commits" aria-describedby="github-availability"><span class="source-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="currentColor" focusable="false"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.65 7.65 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg></span><span class="source-name">GitHub</span><span class="source-detail" data-i18n="yourCommits">Your commits</span></label>
                     <label class="source-card"><input id="mode-weather" type="radio" name="mode" value="weather" aria-describedby="weather-availability"><span class="source-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 1v3m0 16v3M1 12h3m16 0h3M4 4l2 2m12 12 2 2M4 20l2-2M18 6l2-2"/></svg></span><span class="source-name" data-i18n="weather">Weather</span><span class="source-detail" data-i18n="yourCity">Your city</span></label>
+                    <label class="source-card"><input id="mode-pomodoro" type="radio" name="mode" value="pomodoro"><span class="source-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" focusable="false"><circle cx="12" cy="14" r="8"/><path d="M9 2h6m-3 0v4m0 4v5l3 2"/></svg></span><span class="source-name" data-i18n="pomodoroTab">Pomodoro</span><span class="source-detail" data-i18n="pomodoroSourceDetail">Focus &amp; breaks</span></label>
                   </div>
                 </fieldset>
                 <p id="github-availability" class="availability" hidden><span data-i18n="githubUnavailable">GitHub needs a saved token.</span> <a href="#integrations" data-provider="github" data-i18n="configureIntegration">Configure integration</a></p>
@@ -123,6 +129,12 @@
                     </div>
                     <p id="weather-template-hint" class="hint" data-i18n="weatherTemplateHint">You write the message; variables only insert data. {{condition}} uses OpenWeatherMap's description.</p>
                   </div>
+                </fieldset>
+
+                <fieldset id="fields-pomodoro" class="mode-fields plain-fieldset" hidden disabled>
+                  <legend class="sr-only" data-i18n="pomodoroTab">Pomodoro</legend>
+                  <p class="hint" data-i18n="pomodoroSourceHint">Show the server's focus timer. No integration keys needed. Configure durations and control the timer in Pomodoro; preview uses its current saved state.</p>
+                  <a class="back-to-display" href="#pomodoro" data-navigate="pomodoro" data-i18n="pomodoroOpen">Open Pomodoro →</a>
                 </fieldset>
 
                 <div class="form-actions">
@@ -278,6 +290,57 @@
             <p id="device-apply-status" class="message" role="status" aria-live="polite" aria-atomic="true"></p>
             <p class="footnote" data-i18n="deviceOverwriteHint">Applying sends the complete display configuration and overwrites the device's settings. This form shows defaults or the last configuration sent from this panel, not a live reading.</p>
             <p id="device-last-sent" class="device-last-sent"></p>
+          </section>
+        </section>
+        <section id="pomodoro" class="tab-panel pomodoro-layout" role="tabpanel" aria-labelledby="tab-pomodoro" tabindex="0" hidden>
+          <section class="panel pomodoro-timer-panel" aria-labelledby="pomodoro-timer-title">
+            <div class="live-heading"><h2 id="pomodoro-timer-title" data-i18n="pomodoroTimer">Your focus timer</h2><button id="pomodoro-refresh" class="button compact secondary" type="button" data-i18n="refresh" disabled>Refresh</button></div>
+            <div id="pomodoro-phase-status" class="pomodoro-phase-status" role="status" aria-live="polite" aria-atomic="true"><span id="pomodoro-phase"></span><span id="pomodoro-run-status" class="key-state" data-i18n="loading">Loading…</span></div>
+            <p id="pomodoro-counter" class="pomodoro-counter" role="timer" aria-live="off" aria-label="Remaining time" data-i18n-aria-label="pomodoroRemaining">—</p>
+            <p id="pomodoro-sessions" class="hint"></p>
+            <div class="pomodoro-actions" role="group" aria-label="Timer controls" data-i18n-aria-label="pomodoroControls">
+              <button class="button primary" type="button" data-pomodoro-action="start" data-i18n="pomodoroStart" disabled>Start</button>
+              <button class="button primary" type="button" data-pomodoro-action="pause" data-i18n="pomodoroPause" hidden disabled>Pause</button>
+              <button class="button primary" type="button" data-pomodoro-action="resume" data-i18n="pomodoroResume" hidden disabled>Resume</button>
+              <button class="button secondary" type="button" data-pomodoro-action="skip" data-i18n="pomodoroSkip" hidden disabled>Skip phase</button>
+              <button class="button secondary danger" type="button" data-pomodoro-action="reset" data-i18n="pomodoroReset" disabled>Reset timer</button>
+            </div>
+            <p id="pomodoro-draft-hint" class="availability" data-i18n="pomodoroDraftHint" hidden>Timer controls use the saved configuration. Save your draft before starting to use your changes.</p>
+            <p id="pomodoro-feedback" class="message" role="status" aria-live="polite" aria-atomic="true"></p>
+            <div class="preview-transcript"><span class="field-label" data-i18n="pomodoroOutput">Output at last server check</span><p id="pomodoro-output" class="placeholder">—</p></div>
+            <p class="footnote" data-i18n="pomodoroDisplayHint">Select Pomodoro in Display and save to show it on DeskHub, alone or in rotation. The timer runs independently of the selected source and rotation; these controls do not select it automatically.</p>
+            <p class="footnote" data-i18n="pomodoroFetchHint">For second-by-second updates on the device, consider a 1000 ms fetch interval in Device → API. You choose the interval; Pomodoro does not change device settings.</p>
+            <a class="back-to-display" href="#display" data-navigate="display" data-i18n="backToDisplay">Back to display</a>
+          </section>
+          <section class="panel" aria-labelledby="pomodoro-settings-title">
+            <div class="section-heading"><span class="section-number" aria-hidden="true">02</span><div><h2 id="pomodoro-settings-title" data-i18n="pomodoroSettings">Your rhythm</h2><p data-i18n="pomodoroSettingsIntro">Configure focus sessions and breaks.</p></div></div>
+            <p id="pomodoro-config-hint" class="hint" data-i18n="pomodoroConfigHint">Configuration can only be saved when the timer is idle. Reset an active timer before changing it.</p>
+            <form id="pomodoro-settings-form" aria-busy="false">
+              <fieldset id="pomodoro-settings-fields" class="plain-fieldset" aria-describedby="pomodoro-config-hint" disabled>
+                <legend class="sr-only" data-i18n="pomodoroSettings">Your rhythm</legend>
+                <div class="device-field-grid pomodoro-field-grid">
+                  <div><label for="pomodoro-work" data-i18n="pomodoroWorkMinutes">Focus (minutes)</label><input id="pomodoro-work" name="workMinutes" type="number" min="1" max="240" step="1" value="25" required></div>
+                  <div><label for="pomodoro-short-break" data-i18n="pomodoroShortBreakMinutes">Short break (minutes)</label><input id="pomodoro-short-break" name="shortBreakMinutes" type="number" min="1" max="240" step="1" value="5" required></div>
+                  <div><label for="pomodoro-long-break" data-i18n="pomodoroLongBreakMinutes">Long break (minutes)</label><input id="pomodoro-long-break" name="longBreakMinutes" type="number" min="1" max="240" step="1" value="15" required></div>
+                  <div><label for="pomodoro-session-count" data-i18n="pomodoroSessionsBeforeLongBreak">Sessions before a long break</label><input id="pomodoro-session-count" name="sessionsBeforeLongBreak" type="number" min="1" max="12" step="1" value="4" required></div>
+                </div>
+                <label class="checkbox-label"><input name="autoStartBreaks" type="checkbox" checked><span data-i18n="pomodoroAutoStartBreaks">Start breaks automatically</span></label>
+                <label class="checkbox-label"><input name="autoStartWork" type="checkbox"><span data-i18n="pomodoroAutoStartWork">Start focus sessions automatically</span></label>
+                <div class="template-editor">
+                  <div class="template-heading"><label for="pomodoro-template" data-i18n="messageFormat">Message format</label><button class="text-button" type="button" data-pomodoro-reset-template data-i18n="resetFormat">Reset format</button></div>
+                  <textarea id="pomodoro-template" class="message-template" name="template" rows="3" maxlength="2048" spellcheck="false" aria-describedby="pomodoro-template-hint">{{time}}</textarea>
+                  <div class="template-variables" role="group" aria-label="Insert a variable" data-i18n-aria-label="insertVariableGroup">
+                    <button type="button" data-pomodoro-variable="time" data-i18n-title="pomodoroVariableTime">{{time}}</button>
+                    <button type="button" data-pomodoro-variable="phase" data-i18n-title="pomodoroVariablePhase">{{phase}}</button>
+                    <button type="button" data-pomodoro-variable="status" data-i18n-title="pomodoroVariableStatus">{{status}}</button>
+                    <button type="button" data-pomodoro-variable="session" data-i18n-title="pomodoroVariableSession">{{session}}</button>
+                    <button type="button" data-pomodoro-variable="completed" data-i18n-title="pomodoroVariableCompleted">{{completed}}</button>
+                  </div>
+                  <p id="pomodoro-template-hint" class="hint" data-i18n="pomodoroTemplateHint">Use {{time}} for MM:SS, {{session}} for the session in the cycle and {{completed}} for completed focus sessions. {{phase}} and {{status}} insert compact English labels. Add your own wording; the default is just the countdown.</p>
+                </div>
+                <div class="form-actions"><button id="pomodoro-save" class="button primary" type="submit" data-i18n="saveChanges" disabled>Save changes</button></div>
+              </fieldset>
+            </form>
           </section>
         </section>
       </main>

@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.1.0] - 2026-11-10
+
+### Added
+
+- A server-managed Pomodoro with configurable work, short and long breaks,
+  sessions per cycle, and separate automatic-start options for work and breaks.
+- A Pomodoro tab with start, pause, resume, skip and reset controls, completed
+  session counts, editable output templates, and English/Spanish localization.
+- Pomodoro as a standalone display source or an entry in source rotation,
+  using the existing `/display` string response and the user's device fetch interval.
+- Persistent, clock-based timer state that survives browser closure and server
+  restarts, with revision checks to prevent conflicting controls from multiple tabs.
+
 ## [1.0.0] - 2026-11-10
 
 Initial release of the self-hosted Custom DeskHub control panel for trusted local

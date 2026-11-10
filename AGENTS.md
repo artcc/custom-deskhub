@@ -23,6 +23,12 @@
   `public/` contains the native HTML/CSS/JavaScript control panel. Keep the stack simple.
 - `lib/device.js` adapts the device's display configuration form; `public/device.js`
   owns the Device tab. Keep its draft independent of source settings and credentials.
+- `lib/pomodoro.js` owns the persistent server timer; `public/pomodoro.js` owns its
+  independent configuration draft and controls. Pomodoro uses API-mode strings and
+  the user's device fetch interval; never change hardware settings automatically.
+  Derive remaining time and missed phase transitions from timestamps, not request
+  counts. Timer reads/previews must not persist state. Writes require CSRF and the
+  latest revision; failed persistence must preserve the active timer.
 - The LED preview is a 32 × 7 SVG grid (224 cells) using bitmap column data, never
   browser text wrapping or font scaling. Geometry was corrected by the device owner;
   font/alignment/scroll behavior is a simulation. Keep the MD_MAX72XX font
