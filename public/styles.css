@@ -105,7 +105,7 @@ input[type='checkbox'] { accent-color: var(--accent); width: 17px; height: 17px;
 .device-preview { background: #080c09; border: 1px solid #394735; border-radius: 10px; padding: 14px 16px 20px; box-shadow: inset 0 0 30px #0008, 0 6px 16px #0002; }
 .device-topline { display: flex; align-items: center; justify-content: space-between; color: #82947e; font: 8px/1.5 monospace; letter-spacing: 2px; margin-bottom: 19px; }
 .led-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 5px #b0ee8e66; }
-.led-matrix { display: block; width: 100%; height: auto; aspect-ratio: 4 / 1; }
+.led-matrix { display: block; width: 100%; height: auto; aspect-ratio: 32 / 7; }
 .led-cell { fill: #18241a; }
 .led-cell.lit { fill: #54ee6a; }
 .led-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 16px; }

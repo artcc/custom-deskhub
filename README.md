@@ -18,7 +18,7 @@ URL on the device, then choose its content from your browser.
 
 - A responsive web panel for custom text, GitHub contribution commits and weather.
 - Independent draft previews and a view of the currently saved `/display` response.
-- A 32 × 8 LED preview with bitmap text, column measurements and optional scroll simulation.
+- A 32 × 7 LED preview with bitmap text, column measurements and optional scroll simulation.
 - Custom message formats combining your own text with GitHub or weather variables.
 - Provider API keys managed through the web, encrypted in persistent storage.
 - Optional device control by local IP: GitHub, API, Work Timer and X Followers,
@@ -187,8 +187,8 @@ templates retain their literal text, including any wording you wrote yourself.
 
 ### LED preview
 
-The preview renders **32 columns × 8 rows (256 square LED cells)** at a fixed 4:1
-ratio, based on counting the matrix in the [official product photo](https://getdeskhub.com/hero2.webp).
+The preview renders **32 columns × 7 rows (224 square LED cells)** at a fixed 32:7
+ratio, following the device owner's correction of the initial photo count.
 Text lights individual cells; it does not use browser fonts, wrap onto extra lines
 or shrink to fit. The complete ASCII output remains readable below the matrix.
 
@@ -199,8 +199,8 @@ width in LED columns and how many columns lie beyond the fixed 32-column view.
 the complete message without sending anything to the device. Playback is opt-in
 and stops when the preview leaves view, the tab is hidden or the draft changes.
 
-Geometry is measured from the photographed model, not from a published firmware
-specification. Font selection, left alignment, one-column character spacing and
+The font's eighth row is clipped, so some descenders and symbols may be incomplete.
+Font selection, left alignment, one-column character spacing and
 80 ms per scrolling column are simulation choices; firmware behavior has not been
 verified pixel-for-pixel. The preview's scroll control is independent of the
 hardware's scrolling checkbox in **Device**.
@@ -436,7 +436,7 @@ lib/settings.js           Validation, migration and atomic settings persistence
 lib/credentials.js        Validation and encrypted credential storage
 lib/device.js             Device form compatibility, configuration and HTTP adapter
 public/device.js          Device tab and independent hardware configuration draft
-public/led-preview.js     256-cell SVG preview and local playback controls
+public/led-preview.js     224-cell SVG preview and local playback controls
 public/led-layout.js      Bitmap message layout and clipped matrix frames
 public/led-font.js        Separately licensed MD_MAX72XX printable ASCII font data
 public/                   HTML, CSS and browser JavaScript

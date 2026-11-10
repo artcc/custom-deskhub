@@ -85,10 +85,10 @@ test('unsupported code points use one question mark each without client normaliz
   assert.notDeepEqual(textColumns('é'), textColumns('e'));
 });
 
-test('a frame is exactly 32 by 8, left aligned, with no fitting or wrapping', async () => {
+test('a frame is exactly 32 by 7, left aligned, with no fitting or wrapping', async () => {
   const { MATRIX_COLUMNS, MATRIX_ROWS, textColumns, frameColumns } = await loader;
   assert.equal(MATRIX_COLUMNS, 32);
-  assert.equal(MATRIX_ROWS, 8);
+  assert.equal(MATRIX_ROWS, 7);
   const overflow = textColumns('MMMMMll');
   assert.equal(overflow.length, 33);
   assert.deepEqual(frameColumns(overflow), overflow.slice(0, 32));
@@ -100,6 +100,11 @@ test('a frame is exactly 32 by 8, left aligned, with no fitting or wrapping', as
   const short = frameColumns(textColumns('l'));
   assert.deepEqual(short, Uint8Array.from([127, ...Array(31).fill(0)]));
   assert.deepEqual(pixelRows(short)[7], '.'.repeat(32));
+  const descenders = textColumns('gjpqy_$');
+  assert.ok(descenders.some(column => column & 128));
+  const clipped = frameColumns(descenders);
+  assert.ok(clipped.every(column => column <= 127));
+  assert.deepEqual(pixelRows(clipped).slice(0, 7), pixelRows(descenders.slice(0, 32)).slice(0, 7));
 });
 
 test('signed offsets enter from the right and exit left without recycling pixels', async () => {

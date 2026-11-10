@@ -47,16 +47,22 @@
           </div>
           <div class="display-frame">
             <div class="display-topline"><span>D: / TEXT</span><span aria-hidden="true">●</span></div>
-            <p class="display-text">Make room<br>for good ideas.</p>
-            <div class="display-bottomline"><span>YOUR DESK, YOUR WORDS</span><span aria-hidden="true">···</span></div>
+            <svg class="display-matrix" viewBox="0 0 320 70" width="320" height="70" role="img" aria-labelledby="example-matrix-title">
+              <title id="example-matrix-title">Hello on a 32-column, 7-row LED grid</title>
+              <defs><pattern id="example-cell" width="10" height="10" patternUnits="userSpaceOnUse"><rect x="1" y="1" width="8" height="8" fill="#18241a"/></pattern></defs>
+              <rect width="320" height="70" fill="url(#example-cell)"/>
+              <!-- Static rendering of the panel's MD_MAX72XX font; see the font credit below. -->
+              <path fill="#54ee6a" d="M1 1h8v8h-8zM1 11h8v8h-8zM1 21h8v8h-8zM1 31h8v8h-8zM1 41h8v8h-8zM1 51h8v8h-8zM1 61h8v8h-8zM11 31h8v8h-8zM21 31h8v8h-8zM31 31h8v8h-8zM41 1h8v8h-8zM41 11h8v8h-8zM41 21h8v8h-8zM41 31h8v8h-8zM41 41h8v8h-8zM41 51h8v8h-8zM41 61h8v8h-8zM61 31h8v8h-8zM61 41h8v8h-8zM61 51h8v8h-8zM71 21h8v8h-8zM71 41h8v8h-8zM71 61h8v8h-8zM81 21h8v8h-8zM81 41h8v8h-8zM81 61h8v8h-8zM91 31h8v8h-8zM91 41h8v8h-8zM91 61h8v8h-8zM111 1h8v8h-8zM111 11h8v8h-8zM111 21h8v8h-8zM111 31h8v8h-8zM111 41h8v8h-8zM111 51h8v8h-8zM111 61h8v8h-8zM131 1h8v8h-8zM131 11h8v8h-8zM131 21h8v8h-8zM131 31h8v8h-8zM131 41h8v8h-8zM131 51h8v8h-8zM131 61h8v8h-8zM151 31h8v8h-8zM151 41h8v8h-8zM151 51h8v8h-8zM161 21h8v8h-8zM161 61h8v8h-8zM171 21h8v8h-8zM171 61h8v8h-8zM181 31h8v8h-8zM181 41h8v8h-8zM181 51h8v8h-8z"/>
+            </svg>
+            <div class="display-bottomline"><span>32 × 7 · 224 LEDs</span><span>19 / 32 columns</span></div>
           </div>
           <div class="example-response">
             <div class="response-label"><span>GET /display</span><span>JSON</span></div>
             <pre><code>{
-  <span class="code-key">"content"</span>: <span class="code-value">"Make room for good ideas."</span>
+  <span class="code-key">"content"</span>: <span class="code-value">"Hello"</span>
 }</code></pre>
           </div>
-          <figcaption>Illustrative text and layout, not a live device feed. The backend supplies text; your DeskHub controls how it appears.</figcaption>
+          <figcaption>A static example of the panel’s LED preview. Font and alignment are simulated; your DeskHub controls the final rendering. Longer messages can be inspected with the panel’s scroll controls.</figcaption>
         </figure>
       </section>
 
@@ -114,20 +120,20 @@
           <article class="feature-card">
             <span class="feature-icon" aria-hidden="true">&gt;_</span>
             <h3>Your contributions</h3>
-            <p>Today’s GitHub contribution commits, with an optional repository breakdown. Counts follow GitHub’s contribution rules and the UTC day.</p>
+            <p>Today’s GitHub contribution count, with repository details available as a template variable. Counts follow GitHub’s contribution rules and the UTC day. You write any accompanying text.</p>
             <span class="feature-meta">GitHub · 5-minute cache</span>
           </article>
           <article class="feature-card">
             <span class="feature-icon" aria-hidden="true">°C</span>
             <h3>Your local weather</h3>
-            <p>Current temperature and conditions for your chosen city, in Celsius or Fahrenheit, through OpenWeatherMap.</p>
+            <p>Current temperature for your chosen city, in Celsius or Fahrenheit. Add the city or OpenWeatherMap’s condition description through template variables.</p>
             <span class="feature-meta">Weather · 15-minute cache</span>
           </article>
         </div>
         <div class="details-grid">
           <article>
             <h3>Try a draft before saving</h3>
-            <p>See your draft on a 32 × 8 grid of 256 LED cells, with bitmap letters, a column count and optional scroll playback. The full ASCII output stays readable below it. Preview never changes saved settings or sends content to the hardware.</p>
+            <p>See your draft on a 32 × 7 grid of 224 LED cells, with bitmap letters, a column count and optional scroll playback. The full ASCII output stays readable below it. Preview never changes saved settings or sends content to the hardware.</p>
           </article>
           <article>
             <h3>Manage keys in your own panel</h3>
@@ -162,19 +168,19 @@
             <span class="small-label">GitHub message format</span>
             <pre><code>Today I made &#123;&#123;commits&#125;&#125; commits. Keep going!</code></pre>
             <p>Available variables: <code>&#123;&#123;commits&#125;&#125;</code>, <code>&#123;&#123;repositories&#125;&#125;</code> and <code>&#123;&#123;username&#125;&#125;</code>.</p>
-            <p>The default is <code>&#123;&#123;commits&#125;&#125;</code>, showing only the count. Add <code>&#123;&#123;repositories&#125;&#125;</code> for repository names and counts. All wording comes from your template.</p>
+            <p>The default is <code>&#123;&#123;commits&#125;&#125;</code>, producing just <code>7</code>, for example. Add <code>&#123;&#123;repositories&#125;&#125;</code> for repository names and counts. All wording comes from your template.</p>
           </article>
           <article class="format-card" aria-labelledby="weather-format-title">
             <h3 id="weather-format-title">A bit of outside context</h3>
             <span class="small-label">Weather message format</span>
             <pre><code>In &#123;&#123;city&#125;&#125;: &#123;&#123;temperature&#125;&#125; &#123;&#123;unit&#125;&#125; - &#123;&#123;condition&#125;&#125;</code></pre>
             <p>Available variables: <code>&#123;&#123;city&#125;&#125;</code>, <code>&#123;&#123;temperature&#125;&#125;</code>, <code>&#123;&#123;unit&#125;&#125;</code> and <code>&#123;&#123;condition&#125;&#125;</code>.</p>
-            <p>The default is <code>&#123;&#123;temperature&#125;&#125; &#123;&#123;unit&#125;&#125;</code>. Temperature is rounded, units are C or F, and the optional condition is OpenWeatherMap's description, such as <code>clear sky</code>.</p>
+            <p>The default is <code>&#123;&#123;temperature&#125;&#125; &#123;&#123;unit&#125;&#125;</code>, producing <code>23 C</code>, for example. Temperature is rounded, units are C or F, and the optional condition is OpenWeatherMap's description, such as <code>clear sky</code>.</p>
           </article>
         </div>
         <p class="section-note">Each source keeps its own format, up to 2048 characters. The backend adds no wording or summaries. <strong>Reset format</strong> restores the source's default in the draft. An empty format produces empty output. Unknown variables are rejected and final text is normalized to printable ASCII.</p>
         <p class="section-note">Older formats using only <code>&#123;&#123;content&#125;&#125;</code> load as the new defaults. Inside custom formats, this legacy variable inserts only the commit count or rounded temperature; your literal text is preserved.</p>
-        <p class="section-note">The LED grid is counted from the <a href="https://getdeskhub.com/hero2.webp">official product photo</a>, with a proportional bitmap font matching its <a href="https://getdeskhub.com/desky.jpeg">“Hello” example</a>. Text does not wrap or shrink to fit. Play, pause or scrub the scroll simulation to inspect longer messages. Font, alignment and timing remain a simulation rather than a pixel-for-pixel verified firmware replica; preview controls do not change the device’s scroll setting.</p>
+        <p class="section-note">The LED grid has 32 columns and 7 rows. Its proportional bitmap font matches the <a href="https://getdeskhub.com/desky.jpeg">official “Hello” example</a> and is clipped to seven rows, which can crop descenders and symbols. Text does not wrap or shrink to fit. Play, pause or scrub the scroll simulation to inspect longer messages. Font, alignment and timing remain a simulation rather than a pixel-for-pixel verified firmware replica; preview controls do not change the device’s scroll setting.</p>
         <a class="text-link" href="https://github.com/artcc/custom-deskhub/blob/main/README.md#custom-message-formats">Message format reference <span aria-hidden="true">↗</span></a>
       </section>
 
@@ -265,6 +271,7 @@
     <footer class="site-footer">
       <a class="brand footer-brand" href="./"><img src="./deskhub-logo.svg" alt="" width="30" height="30"><span>Custom DeskHub</span></a>
       <p>A self-hosted backend for <a href="https://getdeskhub.com/">DeskHub</a>.</p>
+      <p>Bitmap font: <a href="https://github.com/artcc/custom-deskhub/blob/main/public/led-font.js">MD_MAX72XX</a>, © Marco Colli · <a href="https://github.com/artcc/custom-deskhub/blob/main/public/licenses/MD_MAX72XX-LGPL-2.1.txt">LGPL-2.1+</a>.</p>
       <nav aria-label="Project links"><a href="https://github.com/artcc/custom-deskhub">Source</a><a href="https://github.com/artcc/custom-deskhub/blob/main/LICENSE">License</a><a href="#main">Back to top ↑</a></nav>
     </footer>
   </div>

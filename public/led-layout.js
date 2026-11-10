@@ -1,7 +1,7 @@
 import { FONT } from './led-font.js';
 
 export const MATRIX_COLUMNS = 32;
-export const MATRIX_ROWS = 8;
+export const MATRIX_ROWS = 7;
 
 // The server owns normalization. Unsupported code points each become one '?'.
 export function textColumns(text) {
@@ -21,13 +21,13 @@ export function textColumns(text) {
 }
 
 // Signed integer offsets select a fixed viewport; negative values enter from the right.
-// Bytes retain all eight rows, with bit 0 at the top; nothing wraps or scales to fit.
+// Bit 0 is the top row; clip font data to the visible rows without wrapping or scaling.
 export function frameColumns(columns, offset = 0) {
   if (!Number.isInteger(offset)) throw new RangeError('Frame offset must be an integer');
   const frame = new Uint8Array(MATRIX_COLUMNS);
   for (let x = 0; x < MATRIX_COLUMNS; x++) {
     const source = x + offset;
-    if (source >= 0 && source < columns.length) frame[x] = columns[source];
+    if (source >= 0 && source < columns.length) frame[x] = columns[source] & ((1 << MATRIX_ROWS) - 1);
   }
   return frame;
 }

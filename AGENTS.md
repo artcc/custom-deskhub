@@ -23,9 +23,9 @@
   `public/` contains the native HTML/CSS/JavaScript control panel. Keep the stack simple.
 - `lib/device.js` adapts the device's display configuration form; `public/device.js`
   owns the Device tab. Keep its draft independent of source settings and credentials.
-- The LED preview is a 32 × 8 SVG grid using bitmap column data, never browser
-  text wrapping or font scaling. Its physical geometry comes from the official
-  photo; font/alignment/scroll behavior is a simulation. Keep the MD_MAX72XX font
+- The LED preview is a 32 × 7 SVG grid (224 cells) using bitmap column data, never
+  browser text wrapping or font scaling. Geometry was corrected by the device owner;
+  font/alignment/scroll behavior is a simulation. Keep the MD_MAX72XX font
   attribution and LGPL license with its separate, replaceable source module.
 - Localize all panel copy in English and Spanish (Spain). Select the first supported
   browser language preference and fall back to English. Keep deployment guidance

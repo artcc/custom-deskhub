@@ -122,18 +122,18 @@
             <section id="preview-panel" class="panel" aria-labelledby="preview-title" aria-busy="false">
               <div class="section-heading"><span class="section-number" aria-hidden="true">02</span><div><h2 id="preview-title" data-i18n="preview">Preview</h2><p data-i18n="previewIntro">Try the content before saving it.</p></div><span class="small-tag" data-i18n="draft">DRAFT</span></div>
               <div class="device-preview">
-                <div class="device-topline" aria-hidden="true"><span>DESKHUB / 32 × 8</span><span class="led-dot"></span></div>
-                <svg id="led-matrix" class="led-matrix" viewBox="0 0 320 80" width="320" height="80" role="img" aria-labelledby="led-title" aria-describedby="preview-content"><title id="led-title" data-i18n="ledTitle">32 by 8 LED matrix simulation</title></svg>
+                <div class="device-topline" aria-hidden="true"><span>DESKHUB / 32 × 7</span><span class="led-dot"></span></div>
+                <svg id="led-matrix" class="led-matrix" viewBox="0 0 320 70" width="320" height="70" role="img" aria-labelledby="led-title" aria-describedby="preview-content"><title id="led-title" data-i18n="ledTitle">32 by 7 LED matrix simulation</title></svg>
               </div>
               <div class="led-toolbar">
-                <span class="led-dimensions" data-i18n="ledDimensions">32 × 8 · 256 LEDs</span>
+                <span class="led-dimensions" data-i18n="ledDimensions">32 × 7 · 224 LEDs</span>
                 <div class="led-actions"><button id="led-play" class="button compact secondary" type="button" aria-pressed="false" data-i18n="ledPlay" disabled>Simulate scroll</button><button id="led-reset" class="button compact secondary" type="button" data-i18n="ledReset" disabled>Start</button></div>
               </div>
               <div class="led-position"><label for="led-position" data-i18n="ledPosition">Inspect position</label><input id="led-position" type="range" min="0" max="0" step="1" value="0" disabled></div>
               <p id="led-measurement" class="led-measurement" role="status" data-i18n="ledWaiting">Generate a preview to measure the message.</p>
               <div class="preview-transcript"><span class="field-label" data-i18n="ledFullText">Full output</span><p id="preview-content" class="placeholder" data-i18n="previewPlaceholder">Your next message, here.</p></div>
               <p id="preview-status" class="message" role="status" aria-live="polite" aria-atomic="true" data-i18n="previewHint">Generate a preview using the form values.</p>
-              <p class="footnote" data-i18n="previewFootnote">32 × 8 cells counted from the official photo. The bitmap font matches the photographed “Hello”; alignment and scrolling are simulated, not verified firmware behavior. This preview does not send anything to the device.</p>
+              <p class="footnote" data-i18n="previewFootnote">32 columns × 7 rows. The bitmap font matches the photographed “Hello” and is clipped to seven rows; alignment and scrolling are simulated, not verified firmware behavior. This preview does not send anything to the device.</p>
               <p class="footnote preview-sources"><a href="https://getdeskhub.com/hero2.webp" target="_blank" rel="noreferrer noopener" data-i18n="ledPhoto">Reference photo ↗</a><a href="/assets/licenses/MD_MAX72XX-LGPL-2.1.txt" target="_blank" rel="noreferrer noopener" data-i18n="ledFontLicense">Font: MD_MAX72XX · LGPL-2.1+</a></p>
             </section>
 
