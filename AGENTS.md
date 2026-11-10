@@ -3,6 +3,8 @@
 ## Purpose and communication
 
 - This project is a self-hosted backend for an existing DeskHub ESP32 device.
+- Deploy only within trusted local/private networks, not directly on the public
+  Internet. Both the panel and device endpoints deliberately have no login.
 - Communicate with the developer in Spanish (Spain). Keep code, comments and
   repository documentation in English, following existing conventions.
 - The integration currently supplies text through JSON. Do not assume the device
@@ -12,10 +14,24 @@
 
 ## Code and architecture
 
-- Use Node.js 26 LTS, npm 11, Express 5 and CommonJS. Keep `.nvmrc`, package engines,
+- Use Node.js 26 LTS, npm 11, Express 5 and CommonJS on the backend; use native ES
+  modules in the browser. Keep `.nvmrc`, package engines,
   Docker and CI aligned when updating the runtime.
-- `index.js` contains configuration, routes, upstream requests, caching and storage.
-  Prefer small changes; extract modules when a concrete responsibility warrants it.
+- `index.js` contains routes, CSRF protection and startup. `lib/content.js` handles
+  provider requests and caching; `lib/settings.js` validates and persists settings;
+  `lib/credentials.js` manages encrypted provider credentials.
+  `public/` contains the native HTML/CSS/JavaScript control panel. Keep the stack simple.
+- `lib/device.js` adapts the device's display configuration form; `public/device.js`
+  owns the Device tab. Keep its draft independent of source settings and credentials.
+- The LED preview is a 32 × 8 SVG grid using bitmap column data, never browser
+  text wrapping or font scaling. Its physical geometry comes from the official
+  photo; font/alignment/scroll behavior is a simulation. Keep the MD_MAX72XX font
+  attribution and LGPL license with its separate, replaceable source module.
+- Localize all panel copy in English and Spanish (Spain). Select the first supported
+  browser language preference and fall back to English. Keep deployment guidance
+  generic: do not assume the user's operating system or hosting environment.
+- Store translation dictionaries in `locale/en.json` and `locale/es.json`, never
+  inline in JavaScript. `public/i18n.js` loads them and handles fallback/interpolation.
 - Follow ESLint configuration: two-space indentation, single quotes and semicolons.
 - Prefer native Node.js capabilities and existing dependencies. Update
   `package-lock.json` whenever dependencies change.
@@ -28,12 +44,32 @@
 - Existing routes are `GET /display`, `GET /setDisplay?text=...`, `GET /commits`
   and `GET /weather`. Changing their paths, methods or response format affects
   existing device configurations and callers.
+- `/display` renders the saved source. The panel uses `/api/settings` and
+  `/api/preview`; previews never persist settings. `/healthz` must not call providers.
+- GitHub and weather settings have optional `template` strings, defaulting to
+  `{{commits}}` and `{{temperature}} {{unit}}`. Wording belongs in the editable
+  template, never in implicit backend summaries. Legacy `{{content}}` is a scalar
+  alias; exact old default templates normalize to the new defaults. Preserve custom
+  literal text. Interpolate only supported variables, never evaluate user input.
+  Cache provider data independently of message formatting.
+- Provider keys are managed through `/api/credentials`. Return capability flags,
+  never credential values; omitted keys remain unchanged and empty strings remove them.
+- The panel opens without authentication. Preserve CSRF checks for writes,
+  including legacy `/setDisplay`; they are not an access-control boundary.
 - Prefer compact ASCII-compatible output for generated display content. Do not
   assume Unicode, HTML or multiline rendering works on the hardware.
 - GitHub contribution nodes can represent multiple commits: sum `commitCount`,
   not the number of nodes. Keep date boundaries and cache behavior explicit.
 - A failed persistence operation must not report success or replace the active
   in-memory text with an unsaved value.
+- Optional device control uses an explicitly saved private IPv4 address, `GET /`
+  for form compatibility and `POST /submit` for complete display configuration.
+  Never submit Wi-Fi fields or call `/wifi`. Supported firmware modes are `github`,
+  `api`, `timer` and `xfollowers`. Its HTML does not expose saved settings: show
+  defaults or last acknowledged submission, never claim a live settings snapshot.
+- Device contact operations require CSRF. Bound response sizes and request timeouts,
+  reject incompatible forms, do not follow redirects or retry device submissions.
+  A lost acknowledgement is unconfirmed, not proof that settings were not applied.
 
 ## Configuration and storage
 
@@ -41,12 +77,18 @@
   empty credential values belong in commits. Never print or commit real tokens.
 - `npm start` and `npm run dev` load `.env`; existing process variables take
   precedence. `run_dev.sh` explicitly uses `.env-dev` for Compose interpolation.
-- `GITHUB_TOKEN`, `GITHUB_USERNAME`, `PORT` and `LOCALHOST` are currently required
-  at startup. OpenWeatherMap configuration is optional.
+- `PORT` and `LOCALHOST` are required at startup. Provider keys, username, city and
+  units are configured in the UI, not environment variables. Text mode needs no
+  provider keys.
+- Never put tokens in ordinary settings, responses, logs or browser storage.
+  Credentials use AES-256-GCM with a separate local key; back up both credential
+  files in the persistent directory and preserve their owner-only permissions.
 - Local storage defaults to `data.json` beside `index.js`; `DATA_FILE` overrides it.
   Docker sets `DATA_FILE=/app/data/data.json` inside the persistent mount.
 - Preserve existing data. Older containers may have `/app/data.json` outside the
   mount; migration requires copying it before removing the old container.
+- Legacy `{ text }` data loads as text mode. Save full settings atomically and
+  preserve the previous configuration on write failures.
 - Keep runtime data and environment files out of Docker build contexts. Runtime
   data directories must also stay out of Git.
 

@@ -1,324 +1,203 @@
 const express = require('express');
-const https = require('https');
 const cors = require('cors');
-const fs = require('fs');
-const path = require('path');
+const path = require('node:path');
+const { createHash, randomBytes, timingSafeEqual } = require('node:crypto');
+const { loadSettings, saveSettings, validateSettings } = require('./lib/settings');
+const { createContentService, displayText } = require('./lib/content');
+const { createCredentialStore, validateCredentials } = require('./lib/credentials');
+const { createDeviceService } = require('./lib/device');
 
-// Validate environment variables
-const requiredEnvVars = ['GITHUB_TOKEN', 'GITHUB_USERNAME', 'PORT', 'LOCALHOST'];
-const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
-
-if (missingVars.length > 0) {
-  console.error(`❌ Error: Missing required environment variables: ${missingVars.join(', ')}`);
+const requiredEnvVars = ['PORT', 'LOCALHOST'];
+const missingVars = requiredEnvVars.filter(name => !process.env[name]);
+if (missingVars.length) {
+  console.error(`Missing required environment variables: ${missingVars.join(', ')}`);
   process.exit(1);
 }
 
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-const GITHUB_USERNAME = process.env.GITHUB_USERNAME;
-const LOCALHOST = process.env.LOCALHOST;
 const PORT = process.env.PORT;
+const LOCALHOST = process.env.LOCALHOST;
+const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, 'data.json');
+const csrfToken = randomBytes(32).toString('hex');
+const credentialStore = createCredentialStore(DATA_FILE);
+const defaults = {
+  mode: 'text',
+  text: '',
+  github: { username: '', showRepositories: true, template: '{{commits}}' },
+  weather: { city: '', units: 'metric', template: '{{temperature}} {{unit}}' }
+};
 
-// Optional weather configuration
-const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY;
-const OPENWEATHER_CITY = process.env.OPENWEATHER_CITY;
-const OPENWEATHER_UNITS = process.env.OPENWEATHER_UNITS || 'metric';
+let settings;
+let credentials;
+let device;
+try {
+  settings = loadSettings(DATA_FILE, defaults);
+  credentials = credentialStore.load();
+  device = createDeviceService(DATA_FILE);
+} catch (error) {
+  console.error('[ERROR] Failed to load display settings:', error.message);
+  process.exit(1);
+}
+let content = createContentService(credentials);
+
+function capabilities() {
+  return { github: Boolean(credentials.githubToken), weather: Boolean(credentials.weatherKey) };
+}
 
 const app = express();
-
-// Preserve Express 4 query parsing when upgrading to Express 5.
+app.disable('x-powered-by');
+// Preserve the original query parsing for legacy /setDisplay callers.
 app.set('query parser', 'extended');
-
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Logging middleware
 app.use((req, res, next) => {
   const client = req.socket.remoteAddress;
   res.on('finish', () => {
-    const timestamp = new Date().toISOString();
-    console.log(`[${timestamp}] ${req.method} ${req.path} status=${res.statusCode} client=${client}`);
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path} status=${res.statusCode} client=${client}`);
   });
+  res.set('X-Content-Type-Options', 'nosniff');
   next();
 });
 
-// Persistence for display text
-const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, 'data.json');
+function equalSecret(received, expected) {
+  const hash = value => createHash('sha256').update(value).digest();
+  return timingSafeEqual(hash(received), hash(expected));
+}
 
-function loadDisplayText() {
-  try {
-    if (fs.existsSync(DATA_FILE)) {
-      const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-      return data.text || '';
-    }
-  } catch (error) {
-    console.error('[ERROR] Failed to load display text:', error.message);
+function requireCSRF(req, res, next) {
+  if (!equalSecret(req.get('x-csrf-token') || '', csrfToken)) {
+    return res.status(403).json({ error: 'Invalid CSRF token. Reload the control panel and try again.' });
   }
-  return '';
+  next();
 }
 
-function saveDisplayText(text) {
-  fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
-  fs.writeFileSync(DATA_FILE, JSON.stringify({ text }), 'utf8');
+function noStore(req, res, next) {
+  res.set('Cache-Control', 'no-store');
+  next();
 }
 
-let newText = loadDisplayText();
-
-// Cache for commits endpoint
-let commitsCache = {
-  data: null,
-  timestamp: null,
-  TTL: 5 * 60 * 1000 // 5 minutes
-};
-
-// Cache for weather endpoint
-let weatherCache = {
-  data: null,
-  timestamp: null,
-  TTL: 15 * 60 * 1000 // 15 minutes
-};
-
-/**
- * Maps weather condition codes to text descriptions
- */
-function getWeatherText(weatherId) {
-  // OpenWeatherMap weather condition codes
-  if (weatherId >= 200 && weatherId < 300) return 'Storm';
-  if (weatherId >= 300 && weatherId < 400) return 'Drizzle';
-  if (weatherId >= 500 && weatherId < 600) return 'Rain';
-  if (weatherId >= 600 && weatherId < 700) return 'Snow';
-  if (weatherId >= 700 && weatherId < 800) return 'Fog';
-  if (weatherId === 800) return 'Clear';
-  if (weatherId > 800) return 'Cloudy';
-  return 'N/A';
+function readSelection(input) {
+  const selection = validateSettings(input);
+  if (selection.mode === 'commits' && !capabilities().github) {
+    throw Object.assign(new Error('Configure a GitHub token in the Integrations section.'), { status: 503 });
+  }
+  if (selection.mode === 'weather' && !capabilities().weather) {
+    throw Object.assign(new Error('Configure an OpenWeatherMap key in the Integrations section.'), { status: 503 });
+  }
+  return selection;
 }
 
-/**
- * Makes a request to OpenWeatherMap API
- */
-function fetchWeather() {
-  return new Promise((resolve, reject) => {
-    if (!OPENWEATHER_API_KEY || !OPENWEATHER_CITY) {
-      reject(new Error('Weather API not configured'));
-      return;
-    }
-
-    const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(OPENWEATHER_CITY)}&appid=${OPENWEATHER_API_KEY}&units=${OPENWEATHER_UNITS}`;
-
-    https.get(url, (response) => {
-      let body = '';
-      response.on('data', (chunk) => body += chunk);
-      response.on('end', () => {
-        try {
-          resolve(JSON.parse(body));
-        } catch (error) {
-          reject(error);
-        }
-      });
-    }).on('error', reject);
-  });
+function persist(selection) {
+  saveSettings(DATA_FILE, selection);
+  settings = selection;
 }
 
-/**
- * Makes a GraphQL request to GitHub API
- */
-function fetchGitHubGraphQL(query) {
-  return new Promise((resolve, reject) => {
-    const data = JSON.stringify({ query });
-
-    const options = {
-      hostname: 'api.github.com',
-      path: '/graphql',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${GITHUB_TOKEN}`,
-        'User-Agent': 'custom-deskhub'
-      }
-    };
-
-    const req = https.request(options, (response) => {
-      let body = '';
-      response.on('data', (chunk) => body += chunk);
-      response.on('end', () => {
-        try {
-          resolve(JSON.parse(body));
-        } catch (error) {
-          reject(error);
-        }
-      });
-    });
-
-    req.on('error', reject);
-    req.write(data);
-    req.end();
-  });
-}
-
-app.get('/display', (req, res) => {
-  res.json({ content: newText });
+// Health is independent of external providers and of the selected display content.
+app.get('/healthz', (req, res) => res.json({ status: 'ok' }));
+app.options(['/display', '/commits', '/weather'], cors());
+app.get('/display', cors(), noStore, async (req, res) => {
+  res.json({ content: await content.render(settings) });
+});
+app.get('/commits', cors(), noStore, async (req, res) => {
+  res.json({ content: await content.commits(settings.github) });
+});
+app.get('/weather', cors(), noStore, async (req, res) => {
+  res.json({ content: await content.weather(settings.weather) });
 });
 
-app.get('/setDisplay', (req, res) => {
-  const text = req.query.text;
-
-  if (text === undefined || text === null) {
+app.get('/setDisplay', noStore, requireCSRF, (req, res) => {
+  if (req.query.text === undefined || req.query.text === null) {
     return res.status(400).json({ error: 'Missing required parameter: text' });
   }
-
+  let selection;
   try {
-    saveDisplayText(text);
+    selection = validateSettings({ ...settings, mode: 'text', text: req.query.text });
   } catch (error) {
-    console.error('[ERROR] Failed to save display text:', error.message);
+    return res.status(400).json({ error: error.message });
+  }
+  try {
+    persist(selection);
+  } catch {
+    console.error('[ERROR] Failed to save display text.');
     return res.status(500).json({ error: 'Failed to save display text' });
   }
-  newText = text;
-
-  console.log(`[INFO] Display text updated: "${newText}"`);
-  res.json({ content: newText });
+  res.json({ content: displayText(selection.text) });
 });
 
-app.get('/commits', async (req, res) => {
+app.use('/api', noStore);
+app.use('/api', express.json({ limit: '64kb' }));
+app.get('/api/settings', (req, res) => res.json({ settings, capabilities: capabilities(), csrfToken }));
+app.get('/api/device', (req, res) => res.json({ device: device.read() }));
+app.put('/api/device', requireCSRF, (req, res) => res.json({ device: device.saveAddress(req.body) }));
+app.post('/api/device/check', requireCSRF, async (req, res) => res.json(await device.check()));
+app.post('/api/device/apply', requireCSRF, async (req, res) => res.json({ device: await device.apply(req.body) }));
+app.put('/api/credentials', requireCSRF, (req, res) => {
+  let updated;
   try {
-    // Check cache first
-    const now = Date.now();
-    if (commitsCache.data && commitsCache.timestamp && (now - commitsCache.timestamp < commitsCache.TTL)) {
-      console.log('[INFO] Returning cached commits data');
-      return res.json({ content: commitsCache.data });
-    }
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayISO = today.toISOString();
-
-    const query = `
-      query {
-        user(login: "${GITHUB_USERNAME}") {
-          contributionsCollection(from: "${todayISO}") {
-            commitContributionsByRepository {
-              repository {
-                name
-                owner {
-                  login
-                }
-              }
-              contributions(first: 100) {
-                nodes {
-                  commitCount
-                  occurredAt
-                }
-              }
-            }
-            totalCommitContributions
-          }
-        }
-      }
-    `;
-
-    const result = await fetchGitHubGraphQL(query);
-
-    if (result.errors) {
-      console.error('[ERROR] GitHub API errors:', result.errors);
-      return res.status(500).json({ error: 'GitHub API returned errors', details: result.errors });
-    }
-
-    if (!result.data || !result.data.user) {
-      console.error('[ERROR] Invalid GitHub API response');
-      return res.status(500).json({ error: 'Invalid response from GitHub API' });
-    }
-
-    const contributions = result.data.user.contributionsCollection;
-    const totalCommits = contributions?.totalCommitContributions || 0;
-    const repositories = contributions?.commitContributionsByRepository || [];
-
-    let textResult = `Today: ${totalCommits} commit${totalCommits !== 1 ? 's' : ''}`;
-
-    if (repositories.length > 0) {
-      const repoList = repositories.map(repo => {
-        const commits = repo.contributions.nodes.reduce((total, node) => total + node.commitCount, 0);
-        return `${repo.repository.name}: ${commits}`;
-      }).join(', ');
-      textResult += ` (${repoList})`;
-    }
-
-    // Update cache
-    commitsCache.data = textResult;
-    commitsCache.timestamp = now;
-
-    console.log(`[INFO] Fetched ${totalCommits} commits from GitHub`);
-    res.json({ content: textResult });
+    updated = { ...credentials, ...validateCredentials(req.body) };
   } catch (error) {
-    console.error('[ERROR] Error fetching commits:', error.message);
-    res.status(500).json({ error: 'Failed to fetch GitHub commits', message: error.message });
+    return res.status(400).json({ error: error.message });
   }
-});
-
-app.get('/weather', async (req, res) => {
   try {
-    // Check if weather is configured
-    if (!OPENWEATHER_API_KEY || !OPENWEATHER_CITY) {
-      return res.status(503).json({
-        error: 'Weather service not configured',
-        message: 'Please set OPENWEATHER_API_KEY and OPENWEATHER_CITY environment variables'
-      });
-    }
-
-    // Check cache first
-    const now = Date.now();
-    if (weatherCache.data && weatherCache.timestamp && (now - weatherCache.timestamp < weatherCache.TTL)) {
-      console.log('[INFO] Returning cached weather data');
-      return res.json({ content: weatherCache.data });
-    }
-
-    const weatherData = await fetchWeather();
-
-    if (weatherData.cod !== 200) {
-      console.error('[ERROR] Weather API error:', weatherData.message);
-      return res.status(500).json({ error: 'Weather API error', message: weatherData.message });
-    }
-
-    const temp = Math.round(weatherData.main.temp);
-    const city = weatherData.name;
-    const weatherId = weatherData.weather[0].id;
-    const condition = getWeatherText(weatherId);
-    const unit = OPENWEATHER_UNITS === 'imperial' ? 'F' : 'C';
-
-    const textResult = `${city}: ${temp}${unit} ${condition}`;
-
-    // Update cache
-    weatherCache.data = textResult;
-    weatherCache.timestamp = now;
-
-    console.log(`[INFO] Fetched weather for ${city}: ${temp}${unit} ${condition}`);
-    res.json({ content: textResult });
-  } catch (error) {
-    console.error('[ERROR] Error fetching weather:', error.message);
-    res.status(500).json({ error: 'Failed to fetch weather data', message: error.message });
+    credentialStore.save(updated);
+  } catch {
+    console.error('[ERROR] Failed to save provider credentials.');
+    return res.status(500).json({ error: 'Failed to save provider credentials.' });
   }
+  credentials = updated;
+  // Replacing a provider key also discards any cached responses under the old key.
+  content = createContentService(credentials);
+  res.json({ capabilities: capabilities() });
+});
+app.put('/api/settings', requireCSRF, (req, res) => {
+  let selection;
+  try {
+    selection = readSelection(req.body);
+  } catch (error) {
+    return res.status(error.status || 400).json({ error: error.message });
+  }
+  try {
+    persist(selection);
+  } catch {
+    console.error('[ERROR] Failed to save display settings.');
+    return res.status(500).json({ error: 'Failed to save display settings.' });
+  }
+  res.json({ settings });
+});
+app.post('/api/preview', requireCSRF, async (req, res) => {
+  let selection;
+  try {
+    selection = readSelection(req.body);
+  } catch (error) {
+    return res.status(error.status || 400).json({ error: error.message });
+  }
+  res.json({ content: await content.render(selection), mode: selection.mode });
+});
+app.use('/api', (req, res) => res.status(404).json({ error: 'Unknown panel endpoint.' }));
+
+function panelHeaders(req, res, next) {
+  res.set('Content-Security-Policy', 'default-src \'self\'; script-src \'self\'; style-src \'self\'; object-src \'none\'; base-uri \'none\'; frame-ancestors \'none\'');
+  res.set('Referrer-Policy', 'no-referrer');
+  next();
+}
+app.use('/assets', noStore, panelHeaders, express.static(path.join(__dirname, 'public'), { index: false }));
+app.use('/locale', noStore, panelHeaders, express.static(path.join(__dirname, 'locale'), { index: false }));
+app.get('/', noStore, panelHeaders, (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+
+app.use((error, req, res, next) => {
+  if (res.headersSent) return next(error);
+  if (error.type === 'entity.too.large') return res.status(413).json({ error: 'Request body is too large.' });
+  if (error.type === 'entity.parse.failed') return res.status(400).json({ error: 'Invalid JSON body.' });
+  const status = error.status || 500;
+  console.error(`[ERROR] ${req.method} ${req.path} failed with status ${status}.`);
+  if (error.deviceError) return res.status(status).json({ error: error.message, code: error.code });
+  res.status(status).json({ error: error.status ? error.message : 'Internal server error.' });
 });
 
-app.listen(PORT, '0.0.0.0', (error) => {
+app.listen(PORT, '0.0.0.0', error => {
   if (error) {
     console.error('[ERROR] Failed to start server:', error.message);
     process.exitCode = 1;
     return;
   }
-
-  console.log('='.repeat(50));
-  console.log('✅ Custom DeskHub Server Started');
-  console.log('='.repeat(50));
-  console.log(`🌐 Server URL: ${LOCALHOST}:${PORT}`);
-  console.log(`👤 GitHub User: ${GITHUB_USERNAME}`);
-  console.log(`📝 Display text loaded: "${newText}"`);
-  if (OPENWEATHER_API_KEY && OPENWEATHER_CITY) {
-    console.log(`🌤️  Weather: ${OPENWEATHER_CITY} (${OPENWEATHER_UNITS})`);
-  }
-  console.log('='.repeat(50));
-  console.log('Available endpoints:');
-  console.log(`  GET  ${LOCALHOST}:${PORT}/display`);
-  console.log(`  GET  ${LOCALHOST}:${PORT}/setDisplay?text=<text>`);
-  console.log(`  GET  ${LOCALHOST}:${PORT}/commits`);
-  console.log(`  GET  ${LOCALHOST}:${PORT}/weather`);
-  console.log('='.repeat(50));
+  console.log('Custom DeskHub Server Started');
+  console.log(`Server URL: ${LOCALHOST}:${PORT}`);
+  console.log(`Display mode: ${settings.mode}`);
 });

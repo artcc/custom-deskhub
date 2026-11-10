@@ -13,7 +13,14 @@ yarn-error.log*
 data.json
 data/
 data-dev/
+credentials.json
+credentials.key
+credentials.json.*.tmp
+data.json.*.tmp
+device.json
+device.json.*.tmp
 test/
+scripts/
 run_dev.sh
 docker-compose*.yml
 
@@ -35,6 +42,7 @@ Thumbs.db
 # Ignore documentation
 README.md
 LICENSE
+docs/
 
 # Ignore CI/CD
 .github/

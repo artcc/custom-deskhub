@@ -51,6 +51,7 @@ fi
 echo
 echo "DeskHub is healthy. Container and published ports:"
 compose_dev ps
-echo "Use /display on the published port (localhost on this Mac, the Mac's LAN IP on DeskHub)."
+echo "Open / in your browser for the control panel."
+echo "Configure DeskHub with /display on the published port, using a server address reachable from the device."
 echo "Logs: docker --context orbstack logs -f custom-deskhub-dev"
 echo "Stop: docker --context orbstack stop custom-deskhub-dev"

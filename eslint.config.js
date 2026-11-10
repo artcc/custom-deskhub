@@ -18,5 +18,13 @@ module.exports = [
       'no-unused-vars': ['warn'],
       'no-console': 'off'
     }
+  },
+  {
+    files: ['public/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: globals.browser
+    }
   }
 ];

@@ -31,7 +31,7 @@ EXPOSE 3005
 
 # Health check
 HEALTHCHECK --interval=60s --timeout=3s --start-period=5s --retries=3 \
-  CMD sh -c "node -e \"require('http').get('http://localhost:' + (process.env.PORT || 3005) + '/display', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})\""
+  CMD sh -c "node -e \"require('http').get('http://localhost:' + (process.env.PORT || 3005) + '/healthz', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})\""
 
 # Run the application
 CMD ["node", "index.js"]

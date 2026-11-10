@@ -14,6 +14,12 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 data.json
 data/
 data-dev/
+credentials.json
+credentials.key
+credentials.json.*.tmp
+data.json.*.tmp
+device.json
+device.json.*.tmp
 pids
 *.pid
 *.seed

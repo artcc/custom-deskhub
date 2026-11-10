@@ -1,0 +1,26 @@
+<!doctype html>
+<html><body>
+<!-- Synthetic fixture: not a capture of a physical device. -->
+<form action='/wifi' method='POST'><input type='submit' value='WiFi'></form>
+<form method='POST' onsubmit='return validateForm()' action='/submit' name='configForm'>
+  <select id='displayMode' name='mode'>
+    <option value='github'>GitHub</option><option value='api'>API</option>
+    <option value='timer'>Timer</option><option value='xfollowers'>X followers</option>
+  </select>
+  <section style='display:none'><input name='username' type='text'></section>
+  <section style='display:none'>
+    <input type='text' name='apiUrl'><input name='jsonKey' type='text'>
+    <input name='fetchRate' type='text'>
+    <input name='scrollingText' type='checkbox'>
+  </section>
+  <input name='xUsername' type='text'>
+  <select name='animationType'>
+    <option value='pacman'>Pacman</option><option value='progress'>Progress</option>
+  </select>
+  <input name='timerDuration' type='number' min='1' max='240' value='5'>
+  <input name='restDuration' type='number' min='1' max='240' value='5'>
+  <input name='loopCount' type='number' min='1' max='10' value='1'>
+  <input type='submit' value='Send'>
+</form>
+<script>const ignored = "<form name='configForm'><input name='wifiPassword'></form>";</script>
+</body></html>
